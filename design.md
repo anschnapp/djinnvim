@@ -157,6 +157,43 @@ Still deferred, still no evidence of need: `viewport`, `undo`/`redo`,
 `w`/`b`/`e`, `0`/`$`, `{`/`}`, `%`, `.` repeat, `J`, `>>`/`<<`, `dap`, `t`
 tag objects.
 
+## Dogfood #2 findings (2026-07-10)
+
+Second live dogfood (Fable, warm operator), targeting the v0.1 features.
+Task: 8-part refactor of a generated 61-line Python file (insert constant,
+quote a bare value, quote-style fix, default bump with decoy values, rename
+with a prefix-collision trap, delete 3 debug lines, comparison operator fix,
+scoped variable rename). Result: **13 tool calls, 12 successes, 1 loud
+command error, exact target reached (mechanical diff), file never read in
+full.**
+
+v0.1 features under live fire:
+
+- **`substitute` carried the round:** 4 calls (`:g//d`, `:%s//g` with `\b`,
+  cursor-line `:s`, `:/def report/,$` pattern range) replaced what v0 would
+  have done in ~10 anchored edits. The compact diff output doubled as
+  verification; the pattern range scoped a rename away from an identically
+  named variable in another function on the first try.
+- **`ysiw"` / `cs'"`:** each quote task was 1 call (3 calls each in
+  dogfood #1). No surprises.
+- **Ambiguity counts + `matches` pre-checks composed into a planning tool:**
+  the `fetch_stock` listing showed 6 hits — 2 inside DEBUG strings scheduled
+  for deletion — which suggested reordering (delete first, then rename 3 real
+  sites) and confirmed `\b` would spare `fetch_stock_cached`. Every anchored
+  edit reported `match 1 of 1`; ordinals were never needed because unique
+  anchor patterns were always available.
+- **The one error:** `at /timeout=15/ f1` — tried to use a motion inside the
+  anchored edit form to reach the value. Failed loudly (supported-command
+  list, buffer untouched); recovery was anchoring on the value itself
+  (`at /15\)/ ciw 60`), which is the better idiom anyway. Same lesson as the
+  v0.1 e2e catch: **anchor on the text you want changed, not near it.** Now
+  two independent hits on the same missing guidance → the `edit` tool
+  description must state (a) anchored form takes edit commands only, and
+  (b) the anchor-on-the-value idiom.
+- **`f`/`F` went unused** — the only sub-line case fell to cursor-line `:s`.
+  No new friction; nothing new pulled forward. Feature set feels complete
+  for the benchmark phase.
+
 Caveats that shape the next steps: the operator was warm (knew this doc) and
 the strongest available model (Fable). **The production workhorse will be
 Opus** — the "syntax already in the weights" bet must be validated there,
@@ -167,8 +204,13 @@ carry a cold agent on their own.
 Next session (in rough priority order):
 
 1. ~~**Implement v0.1 features**~~ ✅ done same evening (see v0.1 status
-   above).
-2. **Design + build the benchmark** — see "Benchmark rethink" under
+   above); validated live in dogfood #2 (2026-07-10).
+2. **Cold-agent tool description pass** — descriptions must carry a cold
+   Opus agent alone. Known must-fixes: `edit` must warn that anchors land at
+   match START (anchor on the value you want changed, e.g. `at /15\)/ ciw 60`,
+   not `at /timeout=15/`) and that the anchored form takes edit commands
+   only, not motions — both hit twice now (v0.1 e2e + dogfood #2).
+3. **Design + build the benchmark** — see "Benchmark rethink" under
    Evaluation Plan; add model (Opus vs Fable, cold) as a swept dimension
    alongside file size.
 
