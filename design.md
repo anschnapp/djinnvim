@@ -49,25 +49,40 @@ First prototype is a deliberately small experiment to test whether the keyhole i
 
 **v0 is implemented and green.** Package `keyhole-editor`, Python ≥3.11, MCP Python SDK (FastMCP), entry point `keyhole` (`keyhole.server:main`).
 
+**v0.1 is implemented and green (2026-07-09, late evening):** all four
+features pulled forward from dogfood #1 — anchored-edit ambiguity counts,
+`substitute`, surround (`cs`/`ds`/`ysiw`), `f`/`F` motions.
+
 ```
 src/keyhole/
-  buffer.py    ✅ Buffer/Cursor dataclasses, open/write, disk-staleness check,
-                  saved_lines snapshot (for write's "N lines changed" report)
-  viewport.py  ✅ renderer: line-number gutter, → cursor line, ^ column marker,
-                  2/1/2 default context; CURSOR_STYLE config flag (caret only in v0)
-  motion.py    ✅ /  ?  n  N  :N  gg  G; wrapping search reports `match i of n
-                  (wrapped)`; find_matches shared with edit's anchor
-  edit.py      ✅ anchored `at [Nth] /pattern/ <cmd>`; ciw/caw, ci/ca+di/da for
-                  ( { [ " ' `, diw/daw, dd, cc, D, C, x, r, o/O (multi-line),
-                  A/I; single-line find_object (brackets: enclosing-pair scan,
-                  quotes: pair-up scan with backslash escapes)
-  server.py    ✅ 5 tools wired with few-shot examples; KEYHOLE_ROOT path
-                  sandboxing; staleness check before edit/write
-tests/         ✅ 69 tests (motion, edit, server round-trips, viewport format)
+  buffer.py      ✅ Buffer/Cursor dataclasses, open/write, disk-staleness check,
+                    saved_lines snapshot (for write's "N lines changed" report)
+  viewport.py    ✅ renderer: line-number gutter, → cursor line, ^ column marker,
+                    2/1/2 default context; CURSOR_STYLE config flag (caret only in v0)
+  motion.py      ✅ /  ?  n  N  :N  gg  G  f<char>  F<char>; wrapping search
+                    reports `match i of n (wrapped)`; f/F are strictly
+                    cursor-line-local; find_matches shared with edit's anchor
+  edit.py        ✅ anchored `at [Nth] /pattern/ <cmd>`, summaries append
+                    `(match i of n)` (file-order index); ciw/caw, ci/ca+di/da
+                    for ( { [ " ' `, diw/daw, dd, cc, D, C, x, r, o/O
+                    (multi-line), A/I; cs/ds/ysiw with vim-surround nuances
+                    (open-bracket replacement pads inner spaces, open-bracket
+                    target trims them; close bracket = no padding);
+                    single-line find_object (brackets: enclosing-pair scan,
+                    quotes: pair-up scan with backslash escapes)
+  substitute.py  ✅ :%s///, :s/// (cursor line), :N,M / $ / . / /pat/,/pat/
+                    ranges, flags g i, :g/pat/d; output = count + compact
+                    ±diff of changed lines (pre-edit line numbers), capped at
+                    60 with first/last-5 elision; zero matches is a loud error
+  server.py      ✅ 6 tools wired with few-shot examples; KEYHOLE_ROOT path
+                    sandboxing; staleness check before edit/substitute/write
+tests/           ✅ 115 tests (motion, edit, substitute, server round-trips,
+                    viewport format)
 ```
 
 Verified end-to-end over the MCP stdio protocol (scripted client running the
-example session below: open → motion → anchored edits → matches → write).
+example session below: open → motion → anchored edits → matches → write; a
+second v0.1 script covering f/F → cs → anchored ciw → :%s//g → :g//d → write).
 
 Conventions decided during implementation (in addition to the earlier ones —
 0-based cursor internally / 1-based in output; failed commands never touch
@@ -87,6 +102,25 @@ buffer or cursor; every success echoes a viewport; write appends trailing newlin
   edits proceed and `write` recreates it (the buffer is the only copy);
   *modified*-on-disk still blocks edit/write until re-open.
 - Searches render the `^` column marker; `:N`/`gg`/`G` (line-wise) do not.
+
+Added during v0.1 (2026-07-09, late evening):
+
+- **Anchors land at match START** — `at /retries=3/ ciw 4` changes `retries`,
+  not the `3`; anchor on the value you want changed (`at /3\)/ ciw 4`).
+  Caught live by the v0.1 e2e script; the ambiguity-count summary plus
+  viewport made the miss instantly visible. Tool description should warn
+  about this (not yet done — candidate for the cold-agent description pass).
+- **`substitute` replacement is Python `re` syntax** (`\1` for groups), not
+  vim's; documented in the tool description alongside the regex dialect.
+- **Pattern-range second address** (`:/a/,/b/`) is searched forward from the
+  first address (block semantics), not from the cursor like vim's `,` —
+  matches the intent "from A to the next B"; backwards ranges fail loudly.
+- **`substitute` diff line numbers are pre-edit** (matters when a replacement
+  inserts newlines or `:g//d` deletes lines); `s///` moves the cursor to the
+  last changed line (like vim), `:g//d` to where the first deleted line was.
+- **`f`/`F` can't target a literal space** — motion commands are
+  whitespace-stripped, so `f ` parses as bare `f` (loud error); use `/ /`
+  for that rare case.
 
 ## Dogfood #1 findings (2026-07-09, evening)
 
@@ -132,8 +166,8 @@ carry a cold agent on their own.
 
 Next session (in rough priority order):
 
-1. **Implement v0.1 features** (the 4 pulled forward above: ambiguity count,
-   `substitute`, surround, `f`/`F`).
+1. ~~**Implement v0.1 features**~~ ✅ done same evening (see v0.1 status
+   above).
 2. **Design + build the benchmark** — see "Benchmark rethink" under
    Evaluation Plan; add model (Opus vs Fable, cold) as a swept dimension
    alongside file size.

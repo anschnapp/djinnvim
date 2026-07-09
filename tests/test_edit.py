@@ -228,6 +228,80 @@ def test_r():
     assert buf.lines == ["aXc"]
 
 
+# --- surround ---
+
+def test_cs_quote_to_quote():
+    buf = make(['x = "hello"'], col=6)
+    summary, first, last = execute(buf, "cs\"'")
+    assert buf.lines == ["x = 'hello'"]
+    assert summary == "changed surround \" → ' on line 1"
+    assert (first, last) == (0, 0)
+
+
+def test_cs_quote_to_open_bracket_pads():
+    buf = make(['x = "hello"'], col=6)
+    execute(buf, 'cs"(')
+    assert buf.lines == ["x = ( hello )"]
+
+
+def test_cs_quote_to_close_bracket_no_pad():
+    buf = make(['x = "hello"'], col=6)
+    execute(buf, 'cs")')
+    assert buf.lines == ["x = (hello)"]
+
+
+def test_cs_open_bracket_target_trims_inner_space():
+    buf = make(["x = ( hello )"], col=7)
+    execute(buf, 'cs("')
+    assert buf.lines == ['x = "hello"']
+
+
+def test_cs_no_pair_is_loud():
+    buf = make(["plain"], col=0)
+    with pytest.raises(EditError, match="no \"...\" pair"):
+        execute(buf, "cs\"'")
+    assert buf.lines == ["plain"]
+
+
+def test_cs_bad_target_is_loud():
+    buf = make(["plain"], col=0)
+    with pytest.raises(EditError, match="unsupported surround target"):
+        execute(buf, "csx'")
+
+
+def test_ds_quote():
+    buf = make(['x = "hello" + y'], col=6)
+    summary, _, _ = execute(buf, 'ds"')
+    assert buf.lines == ["x = hello + y"]
+    assert summary == 'deleted surround " on line 1'
+
+
+def test_ds_open_bracket_trims_inner_space():
+    buf = make(["f( x )"], col=3)
+    execute(buf, "ds(")
+    assert buf.lines == ["fx"]
+
+
+def test_ysiw_quote():
+    buf = make(["say hello now"], col=5)
+    summary, _, _ = execute(buf, 'ysiw"')
+    assert buf.lines == ['say "hello" now']
+    assert summary == 'surrounded word with " on line 1'
+    assert buf.cursor.col == 4
+
+
+def test_ysiw_open_bracket_pads():
+    buf = make(["say hello now"], col=5)
+    execute(buf, "ysiw(")
+    assert buf.lines == ["say ( hello ) now"]
+
+
+def test_ysiw_needs_word_under_cursor():
+    buf = make(["a  b"], col=1)
+    with pytest.raises(EditError, match="no word under cursor"):
+        execute(buf, 'ysiw"')
+
+
 # --- anchored form ---
 
 def test_anchored_edit():
@@ -235,6 +309,27 @@ def test_anchored_edit():
     summary, first, last = execute(buf, "at /old/ ciw new")
     assert buf.lines == ["aaa", "new = 1", "bbb"]
     assert buf.cursor.line == 1
+    assert summary == "changed line 2 (match 1 of 1)"
+
+
+def test_anchored_summary_reports_ambiguity():
+    buf = make(["x", "foo = 1", "bar = foo", "baz = foo"])
+    summary, _, _ = execute(buf, "at /foo/ ciw qux")
+    assert buf.lines == ["x", "qux = 1", "bar = foo", "baz = foo"]
+    assert summary == "changed line 2 (match 1 of 3)"
+
+
+def test_anchored_ordinal_summary_counts_in_file_order():
+    buf = make(["x", "foo = 1", "bar = foo", "baz = foo"])
+    summary, _, _ = execute(buf, "at 3rd /foo/ ciw qux")
+    assert buf.lines == ["x", "foo = 1", "bar = foo", "baz = qux"]
+    assert summary == "changed line 4 (match 3 of 3)"
+
+
+def test_unanchored_summary_has_no_match_count():
+    buf = make(["word"])
+    summary, _, _ = execute(buf, "ciw x")
+    assert summary == "changed line 1"
 
 
 def test_anchored_ordinal():

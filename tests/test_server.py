@@ -59,7 +59,8 @@ def test_edit_echoes_post_edit_viewport(sample):
     out = server.edit("at /opts = /2nd ciw")
     assert out.startswith("error:")  # malformed on purpose: never guess
     out = server.edit("at /path/ ciw fname")
-    assert out.splitlines()[0] == "changed line 1"
+    # "path" also matches on line 3 — the summary must surface the ambiguity
+    assert out.splitlines()[0] == "changed line 1 (match 1 of 2)"
     assert "def parse_config(fname):" in out
 
 
@@ -75,6 +76,36 @@ def test_staleness_blocks_edit(sample):
     os.utime(sample, (0, 0))
     out = server.edit("dd")
     assert "changed on disk" in out
+
+
+def test_substitute_round_trip(sample):
+    server.open("config.py")
+    out = server.substitute(":%s/path/fname/g")
+    lines = out.splitlines()
+    assert lines[0] == "2 substitution(s) on 2 line(s)"
+    assert "- 1  def parse_config(path):" in out
+    assert "+ 1  def parse_config(fname):" in out
+    out = server.write()
+    assert "2 line(s) changed" in out
+    assert "def parse_config(fname):" in sample.read_text()
+
+
+def test_substitute_zero_matches_is_loud(sample):
+    server.open("config.py")
+    out = server.substitute(":%s/zzz/y/g")
+    assert out.startswith("error: pattern matched 0 times")
+
+
+def test_substitute_requires_open(sample):
+    assert server.substitute(":%s/a/b/").startswith("error: no active buffer")
+
+
+def test_substitute_staleness_blocks(sample):
+    server.open("config.py")
+    import os
+    sample.write_text(SAMPLE + "# more\n")
+    os.utime(sample, (0, 0))
+    assert "changed on disk" in server.substitute(":%s/path/x/g")
 
 
 def test_matches_listing_and_cap(sample):

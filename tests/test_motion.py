@@ -111,6 +111,43 @@ def test_unknown_motion():
         execute(buf, "7j")
 
 
+def test_f_moves_to_next_char_on_line():
+    buf = make(['x = "hello"'])
+    buf.cursor.col = 0
+    status, show_col = execute(buf, 'f"')
+    assert status == "column 5"
+    assert (buf.cursor.line, buf.cursor.col) == (0, 4)
+    assert show_col is True
+
+
+def test_f_skips_char_at_cursor():
+    buf = make(['x = "hello"'])
+    buf.cursor.col = 4  # on the first "
+    execute(buf, 'f"')
+    assert buf.cursor.col == 10
+
+
+def test_F_moves_backward_on_line():
+    buf = make(['x = "hello"'])
+    buf.cursor.col = 10  # on the closing "
+    status, _ = execute(buf, 'F"')
+    assert status == "column 5"
+    assert buf.cursor.col == 4
+
+
+def test_f_stays_on_cursor_line():
+    buf = make(["no target", "z here"])
+    with pytest.raises(MotionError, match="no 'z' after cursor on line 1"):
+        execute(buf, "fz")
+    assert buf.cursor.col == 0
+
+
+def test_f_without_char_is_loud():
+    buf = make(["abc"])
+    with pytest.raises(MotionError, match="f needs a target character"):
+        execute(buf, "f")
+
+
 def test_regex_search_skips_match_at_cursor():
     # vim semantics: / finds the first match strictly AFTER the cursor,
     # so a match at (line 1, col 1) is skipped when the cursor sits there

@@ -1,7 +1,7 @@
-"""Motion parsing and execution — v0 subset.
+"""Motion parsing and execution — v0.1 subset.
 
-Supported: /pattern  ?pattern  n  N  :N  gg  G
-Deferred (see design.md v0 scope): f F w b e 0 $ { } %
+Supported: /pattern  ?pattern  n  N  :N  gg  G  f{char}  F{char}
+Deferred (see design.md v0 scope): w b e 0 $ { } %
 
 Every motion either moves the cursor and returns a status line
 (e.g. "match 3 of 14") or raises MotionError without touching state.
@@ -61,8 +61,28 @@ def execute(buf: Buffer, command: str) -> tuple[str, bool]:
         buf.cursor.line, buf.cursor.col = len(buf.lines) - 1, 0
         return f"line {len(buf.lines)} (last)", False
 
+    if command in ("f", "F"):
+        raise MotionError(f"{command} needs a target character: {command}<char>")
+
+    if len(command) == 2 and command[0] in "fF":
+        target = command[1]
+        line = buf.lines[buf.cursor.line]
+        if command[0] == "f":
+            idx = line.find(target, buf.cursor.col + 1)
+            where = "after cursor"
+        else:
+            idx = line.rfind(target, 0, buf.cursor.col)
+            where = "before cursor"
+        if idx < 0:
+            raise MotionError(
+                f"no {target!r} {where} on line {buf.cursor.line + 1}"
+            )
+        buf.cursor.col = idx
+        return f"column {idx + 1}", True
+
     raise MotionError(
-        f"unknown motion: {command!r} (v0 supports /pattern ?pattern n N :N gg G)"
+        f"unknown motion: {command!r} "
+        "(supported: /pattern ?pattern n N :N gg G f<char> F<char>)"
     )
 
 

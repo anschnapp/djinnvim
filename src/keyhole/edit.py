@@ -1,11 +1,13 @@
-"""Edit command parsing and execution — v0 subset.
+"""Edit command parsing and execution — v0.1 subset.
 
 Anchored form (preferred): `at /pattern/ <command>` — search, then apply.
 Optional ordinal: `at 2nd /pattern/ <command>` (2nd match after cursor).
+Anchored summaries carry the ambiguity count: `changed line 9 (match 1 of 3)`.
 
 Commands: ciw caw  ci( ci{ ci[ ci" ci'  (+ di/da variants)  diw
           dd  cc  o O  A I  D C  x r
-Deferred: cs/ds/ysiw (surround), `.` repeat, cit/dit, dap, J, >> <<
+          cs{old}{new}  ds{char}  ysiw{char}  (vim-surround)
+Deferred: `.` repeat, cit/dit, dap, J, >> <<
 
 Every edit returns (summary, affected_first, affected_last) so the server
 can render the post-edit viewport. Failures raise EditError loudly and
@@ -25,8 +27,12 @@ class EditError(Exception):
 _ANCHOR = re.compile(r"^at\s+(?:(\d+)(?:st|nd|rd|th)\s+)?/((?:\\.|[^/])*)/\s*")
 _OBJECT_CMD = re.compile(r"^([cd])([ia])([wW(){}\[\]\"'`])(?:\s(.*))?$", re.DOTALL)
 _INSERT_CMD = re.compile(r"^(cc|C|o|O|A|I)(?:\s(.*))?$", re.DOTALL)
+_CS_CMD = re.compile(r"^cs(.)(.)$")
+_DS_CMD = re.compile(r"^ds(.)$")
+_YSIW_CMD = re.compile(r"^ysiw(.)$")
 
 _BRACKETS = {"(": "()", ")": "()", "{": "{}", "}": "{}", "[": "[]", "]": "[]"}
+_QUOTES = "\"'`"
 
 
 def execute(buf: Buffer, command: str) -> tuple[str, int, int]:
@@ -35,6 +41,7 @@ def execute(buf: Buffer, command: str) -> tuple[str, int, int]:
     command = command.lstrip().rstrip("\n")
     saved = (buf.cursor.line, buf.cursor.col)
 
+    anchor_note = ""
     m = _ANCHOR.match(command)
     if m:
         ordinal = int(m.group(1) or 1)
@@ -53,16 +60,18 @@ def execute(buf: Buffer, command: str) -> tuple[str, int, int]:
         # Nth match strictly after the cursor, wrapping like search.
         after = [i for i, h in enumerate(hits) if h > saved]
         start = after[0] if after else 0
-        buf.cursor.line, buf.cursor.col = hits[(start + ordinal - 1) % len(hits)]
+        chosen = (start + ordinal - 1) % len(hits)
+        buf.cursor.line, buf.cursor.col = hits[chosen]
+        anchor_note = f" (match {chosen + 1} of {len(hits)})"
         command = rest
 
     try:
-        result = _apply(buf, command)
+        summary, first, last = _apply(buf, command)
     except EditError:
         buf.cursor.line, buf.cursor.col = saved
         raise
     buf.dirty = True
-    return result
+    return summary + anchor_note, first, last
 
 
 def _apply(buf: Buffer, cmd: str) -> tuple[str, int, int]:
@@ -151,9 +160,70 @@ def _apply(buf: Buffer, cmd: str) -> tuple[str, int, int]:
         start, end = find_object(line, col, obj, around=scope == "a")
         return _splice(buf, i, start, end, text or "")
 
+    m = _CS_CMD.match(bare)
+    if m:
+        old, new = m.groups()
+        a, b = _surround_span(line, col, old)
+        inner = line[a + 1:b - 1]
+        if old in "({[":  # open-bracket target trims inner space (vim-surround)
+            inner = inner.strip()
+        oc, cc_, pad = _surround_delims(new)
+        if pad:
+            inner = f" {inner} "
+        buf.lines[i] = line[:a] + oc + inner + cc_ + line[b:]
+        buf.cursor.col = a
+        return f"changed surround {old} → {new} on line {i + 1}", i, i
+
+    m = _DS_CMD.match(bare)
+    if m:
+        old = m.group(1)
+        a, b = _surround_span(line, col, old)
+        inner = line[a + 1:b - 1]
+        if old in "({[":
+            inner = inner.strip()
+        buf.lines[i] = line[:a] + inner + line[b:]
+        buf.cursor.col = a
+        return f"deleted surround {old} on line {i + 1}", i, i
+
+    m = _YSIW_CMD.match(bare)
+    if m:
+        new = m.group(1)
+        start, end = _word_span(line, col, around=False)
+        oc, cc_, pad = _surround_delims(new)
+        word = line[start:end]
+        if pad:
+            word = f" {word} "
+        buf.lines[i] = line[:start] + oc + word + cc_ + line[end:]
+        buf.cursor.col = start
+        return f"surrounded word with {new} on line {i + 1}", i, i
+
     raise EditError(
         f"unknown edit command: {cmd!r} "
-        "(v0 supports ciw/caw ci(/{{/[/\"/' di/da-variants dd cc D C x r o O A I)"
+        "(supported: ciw/caw ci(/{{/[/\"/' di/da-variants dd cc D C x r o O A I "
+        "cs<old><new> ds<char> ysiw<char>)"
+    )
+
+
+def _surround_span(line: str, col: int, old: str) -> tuple[int, int]:
+    """Span of the enclosing pair for a surround target char, end-exclusive
+    (delimiters at [a] and [b-1])."""
+    if old not in _BRACKETS and old not in _QUOTES:
+        raise EditError(
+            f"unsupported surround target: {old!r} (use a bracket or quote)"
+        )
+    return find_object(line, col, old, around=True)
+
+
+def _surround_delims(new: str) -> tuple[str, str, bool]:
+    """(open, close, pad) for a replacement delimiter. Open-bracket aliases
+    pad the content with one inner space, close aliases don't (vim-surround)."""
+    if new in _BRACKETS:
+        pair = _BRACKETS[new]
+        return pair[0], pair[1], new in "({["
+    if new in _QUOTES:
+        return new, new, False
+    raise EditError(
+        f"unsupported surround delimiter: {new!r} (use a bracket or quote)"
     )
 
 
