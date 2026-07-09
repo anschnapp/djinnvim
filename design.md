@@ -88,15 +88,55 @@ buffer or cursor; every success echoes a viewport; write appends trailing newlin
   *modified*-on-disk still blocks edit/write until re-open.
 - Searches render the `^` column marker; `:N`/`gg`/`G` (line-wise) do not.
 
+## Dogfood #1 findings (2026-07-09, evening)
+
+First live dogfood from Claude Code (Fable, warm operator — had just read this
+doc). Task: 6-part refactor of a generated 65-line Python file (rename across
+2 call sites, constant bump, quote normalization ×2, delete debug lines,
+signature default change, insert constant). Result: **14 tool calls, 14
+first-try successes, zero malformed commands, exact target reached, file
+never read in full.**
+
+What the design got right, confirmed live:
+
+- Vim syntax needed no thought to produce — principle #1 (no novel DSL) held.
+- Viewport echoes fully replaced verification re-reads — never wanted `Read`.
+- `matches` pre-check caught a real ambiguity (`timeout=10` vs `range(10)`)
+  before an anchored edit could hit the wrong site — principle #4 held.
+- All friction encountered was already on the deferred list; nothing
+  unanticipated broke.
+
+Friction → features pulled forward (v0.1, in priority order):
+
+1. **Ambiguity count in anchored-edit summaries** — `at /30/ ciw 60` succeeded
+   by luck; the summary should read `changed line 9 (match 1 of 3)` so a
+   wrong-site risk is visible at a glance, like `motion` already does.
+2. **`substitute`** — multi-site rename costs one `ciw` call per site; the
+   most common refactor shape needs the ex-style tool.
+3. **Surround `cs`/`ds`/`ysiw`** — quote normalization took 3 calls
+   (`r"` → `motion /'` → `r"`) or a full `cc` line retype (the verbatim
+   reproduction cost keyhole exists to avoid); `cs"'` is one call.
+4. **`f`/`F` motions** — no natural idiom for sub-line hops (e.g. to a
+   closing quote) without them.
+
+Still deferred, still no evidence of need: `viewport`, `undo`/`redo`,
+`w`/`b`/`e`, `0`/`$`, `{`/`}`, `%`, `.` repeat, `J`, `>>`/`<<`, `dap`, `t`
+tag objects.
+
+Caveats that shape the next steps: the operator was warm (knew this doc) and
+the strongest available model (Fable). **The production workhorse will be
+Opus** — the "syntax already in the weights" bet must be validated there,
+cold, with only the tool descriptions as guidance. Model is therefore a
+benchmark dimension (run at least Opus + Fable), and tool descriptions must
+carry a cold agent on their own.
+
 Next session (in rough priority order):
 
-1. **Design the benchmark** — see "Benchmark rethink" under Evaluation Plan:
-   generated documents, keyhole vs no-keyhole, file size as the swept variable.
-2. Dogfood from Claude Code (server already registered via `claude mcp add`;
-   restart a session in this project to get the tools).
-3. Deferred tools (`substitute`, `viewport`, `undo`/`redo`) and deferred
-   motions/objects — pull forward whichever the benchmark or dogfooding
-   shows is actually missed.
+1. **Implement v0.1 features** (the 4 pulled forward above: ambiguity count,
+   `substitute`, surround, `f`/`F`).
+2. **Design + build the benchmark** — see "Benchmark rethink" under
+   Evaluation Plan; add model (Opus vs Fable, cold) as a swept dimension
+   alongside file size.
 
 ## MCP Tools
 
@@ -277,6 +317,10 @@ Direction decided in conversation, details to be worked out next session:
   clean, error-unprone editing keyhole is designed for. We optimize for
   correctness, loud failures, and token economy; never for command brevity
   for its own sake.
+- **Model is a swept dimension (added 2026-07-09 after dogfood #1):** run at
+  least Opus (the intended workhorse) and Fable, always cold — the dogfood
+  operator was warm Fable, so it validated the interaction model but not the
+  "syntax in the weights of the production model" bet.
 - **Open questions for next session:** which task types beyond
   rename-across-call-sites; how the no-keyhole baseline agent is run
   (same model, same prompt, minus the MCP server?); token accounting
