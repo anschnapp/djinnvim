@@ -1,6 +1,17 @@
-# Keyhole Editor — Design Document
+# djinnvim — Design Document
 
-An MCP server providing vim-inspired, pattern-anchored file navigation and editing for AI agents. The core idea: the agent never reads whole files. It hops between search hits and edits through small "viewports" (peepholes), the way a human uses vim — `/search`, look at the screen, edit.
+Vim-inspired, pattern-anchored file navigation and editing for AI agents. The core idea: the agent never reads whole files. It hops between search hits and edits through small "viewports" (peepholes), the way a human uses vim — `/search`, look at the screen, edit.
+
+**Naming (decided 2026-07-10):** the product is **djinnvim**; **"keyhole"** remains the term for the *interaction model* (keyhole editing, keyhole discipline) throughout this doc. Known caveat, accepted: `-vim` suffix names read like Neovim distros at first glance — the README must say "editing tool for AI agents, not a vim config" in sentence one.
+
+## Interfaces (decided 2026-07-10)
+
+Two user groups, two interfaces, **one program**: the same core is exposed both as an **MCP server** and as a **CLI driven by an agent skill**. Architecture that makes this cheap:
+
+- All logic lives in an interface-neutral `Session` class (`session.py`): open buffers + active buffer as state, the six operations as string-in/string-out methods (errors included, as `error: ...` strings).
+- `server.py` is a thin MCP wrapper (FastMCP registration + tool descriptions only). The future `cli.py` will be an equally thin argparse wrapper.
+- **CLI state model (decided): state file, no daemon.** A CLI invocation is a fresh process per command, so `Session` state (buffers, cursor, last search) gets serialized to a state file between calls (e.g. `~/.local/state/djinnvim/`); the `Buffer` dataclass is plain data and JSON-serializable as-is. Rejected: a background daemon (lifecycle babysitting for no gain at these file sizes).
+- **Only the MCP stack is built and tested for now**; the CLI + skill come after the benchmark phase. The cold-agent description pass benefits both: the same descriptions that must carry a cold Opus agent over MCP become the backbone of the skill's SKILL.md.
 
 ## Motivation
 
@@ -47,14 +58,14 @@ First prototype is a deliberately small experiment to test whether the keyhole i
 
 ## v0 Status & Layout (as of 2026-07-09, evening)
 
-**v0 is implemented and green.** Package `keyhole-editor`, Python ≥3.11, MCP Python SDK (FastMCP), entry point `keyhole` (`keyhole.server:main`).
+**v0 is implemented and green.** Package `djinnvim` (renamed from `keyhole-editor` 2026-07-10), Python ≥3.11, MCP Python SDK (FastMCP), entry point `djinnvim` (`djinnvim.server:main`).
 
 **v0.1 is implemented and green (2026-07-09, late evening):** all four
 features pulled forward from dogfood #1 — anchored-edit ambiguity counts,
 `substitute`, surround (`cs`/`ds`/`ysiw`), `f`/`F` motions.
 
 ```
-src/keyhole/
+src/djinnvim/
   buffer.py      ✅ Buffer/Cursor dataclasses, open/write, disk-staleness check,
                     saved_lines snapshot (for write's "N lines changed" report)
   viewport.py    ✅ renderer: line-number gutter, → cursor line, ^ column marker,
@@ -74,8 +85,13 @@ src/keyhole/
                     ranges, flags g i, :g/pat/d; output = count + compact
                     ±diff of changed lines (pre-edit line numbers), capped at
                     60 with first/last-5 elision; zero matches is a loud error
-  server.py      ✅ 6 tools wired with few-shot examples; KEYHOLE_ROOT path
-                    sandboxing; staleness check before edit/substitute/write
+  session.py     ✅ interface-neutral Session facade (2026-07-10): buffer
+                    registry + active buffer + the six operations as
+                    string-in/string-out methods; root path sandboxing;
+                    staleness check before edit/substitute/write
+  server.py      ✅ thin MCP wrapper: FastMCP registration + tool
+                    descriptions with few-shot examples; DJINNVIM_ROOT env
+                    var sets the sandbox root
 tests/           ✅ 115 tests (motion, edit, substitute, server round-trips,
                     viewport format)
 ```

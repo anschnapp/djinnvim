@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from keyhole.buffer import Buffer
-from keyhole.edit import EditError, execute, find_object
+from djinnvim.buffer import Buffer
+from djinnvim.edit import EditError, execute, find_object
 
 
 def make(lines, line=0, col=0):

@@ -2,9 +2,10 @@ import textwrap
 
 import pytest
 
-from keyhole import server
-from keyhole.buffer import Buffer
-from keyhole.viewport import render
+from djinnvim import server
+from djinnvim.buffer import Buffer
+from djinnvim.session import Session
+from djinnvim.viewport import render
 
 SAMPLE = textwrap.dedent("""\
     def parse_config(path):
@@ -19,9 +20,7 @@ SAMPLE = textwrap.dedent("""\
 def sample(tmp_path, monkeypatch):
     f = tmp_path / "config.py"
     f.write_text(SAMPLE)
-    monkeypatch.setattr(server, "ROOT", tmp_path)
-    monkeypatch.setattr(server, "_buffers", {})
-    monkeypatch.setattr(server, "_active", None)
+    monkeypatch.setattr(server, "session", Session(root=tmp_path))
     return f
 
 

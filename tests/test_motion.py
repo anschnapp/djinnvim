@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from keyhole.buffer import Buffer
-from keyhole.motion import MotionError, execute
+from djinnvim.buffer import Buffer
+from djinnvim.motion import MotionError, execute
 
 
 def make(lines):

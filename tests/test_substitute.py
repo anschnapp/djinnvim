@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from keyhole.buffer import Buffer
-from keyhole.substitute import DIFF_CAP, SubstituteError, execute
+from djinnvim.buffer import Buffer
+from djinnvim.substitute import DIFF_CAP, SubstituteError, execute
 
 
 def make(lines, line=0, col=0):
