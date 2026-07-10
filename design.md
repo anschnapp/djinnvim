@@ -107,7 +107,8 @@ Verified end-to-end over the MCP stdio protocol (scripted client running the
 example session below: open → motion → anchored edits → matches → write; a
 second v0.1 script covering f/F → cs → anchored ciw → :%s//g → :g//d → write;
 a third v0.2 script covering a cross-file function move — pattern-range cut →
-wrong-name `:put` recovery → `G` → put → write, exact target diffs).
+wrong-name `:put` recovery → `G` → put → write, exact target diffs — kept in
+the repo at `e2e/e2e_registers.py`; run with `.venv/bin/python`, not pytest).
 
 Conventions decided during implementation (in addition to the earlier ones —
 0-based cursor internally / 1-based in output; failed commands never touch
