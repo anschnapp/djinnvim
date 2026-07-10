@@ -71,7 +71,7 @@ def edit(command: str) -> str:
 
 @mcp.tool()
 def substitute(command: str) -> str:
-    """Ex-style substitution on the active buffer — for repetitive, file-wide,
+    """Ex-style commands on the active buffer — for repetitive, file-wide,
     or ranged changes where one pattern beats many single edits (call matches
     first to see every affected site). Forms: `:%s/old/new/g` (whole file),
     `:s/old/new/` (cursor line), `:10,40s/foo/bar/` (line range),
@@ -81,10 +81,19 @@ def substitute(command: str) -> str:
     substitution count + a compact diff of changed lines. Zero matches is a
     loud error; the buffer is untouched.
 
+    Registers — move text without retyping it: `:RANGE y NAME` yanks the
+    range into register NAME, `:RANGE d NAME` cuts it, then position the
+    cursor with motion and `:put NAME` inserts it below the cursor line
+    (works across files). Ranges as above (`:10,20y block`,
+    `:/def helper/,/^$/d block`). Bare `:RANGE d` is a plain delete and
+    never touches a register; bare `:y`/`:put` use the unnamed register.
+    Yank/cut echo the stored content; you never retype it.
+
     Examples:
       substitute(":%s/parse_config/load_config/g")
       substitute(":g/print\\(.*DEBUG/d")
       substitute(":/def render/,/^$/s/ctx/context/g")
+      substitute(":/def helper/,/^$/d block")  then  substitute(":put block")
     """
     return session.substitute(command)
 

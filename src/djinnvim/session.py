@@ -33,6 +33,9 @@ class Session:
         self.root = (root or Path.cwd()).resolve()
         self.buffers: dict[Path, Buffer] = {}
         self.active: Buffer | None = None
+        # Session-wide (not per-buffer), so cut in one file / put in another
+        # works. Key "" is the unnamed register.
+        self.registers: dict[str, list[str]] = {}
 
     def _check_fresh(self, buf: Buffer) -> None:
         try:
@@ -102,7 +105,7 @@ class Session:
             return "error: no active buffer — call open(path) first"
         try:
             self._check_fresh(buf)
-            return substitute_mod.execute(buf, command)
+            return substitute_mod.execute(buf, command, self.registers)
         except (edit_mod.EditError, substitute_mod.SubstituteError) as e:
             return f"error: {e}"
 

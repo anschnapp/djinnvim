@@ -64,6 +64,10 @@ First prototype is a deliberately small experiment to test whether the keyhole i
 features pulled forward from dogfood #1 — anchored-edit ambiguity counts,
 `substitute`, surround (`cs`/`ds`/`ysiw`), `f`/`F` motions.
 
+**v0.2 is implemented and green (2026-07-10):** registers — `:RANGE y NAME`,
+`:RANGE d NAME` (cut), `:put NAME`, wrong-name recovery — see "Registers:
+cut / yank / put".
+
 ```
 src/djinnvim/
   buffer.py      ✅ Buffer/Cursor dataclasses, open/write, disk-staleness check,
@@ -84,7 +88,10 @@ src/djinnvim/
   substitute.py  ✅ :%s///, :s/// (cursor line), :N,M / $ / . / /pat/,/pat/
                     ranges, flags g i, :g/pat/d; output = count + compact
                     ±diff of changed lines (pre-edit line numbers), capped at
-                    60 with first/last-5 elision; zero matches is a loud error
+                    60 with first/last-5 elision; zero matches is a loud error;
+                    v0.2 registers: :RANGE y/d NAME, plain :RANGE d (no
+                    register), :put NAME with viewport echo, stripped content
+                    previews, wrong-name error lists all registers
   session.py     ✅ interface-neutral Session facade (2026-07-10): buffer
                     registry + active buffer + the six operations as
                     string-in/string-out methods; root path sandboxing;
@@ -92,13 +99,15 @@ src/djinnvim/
   server.py      ✅ thin MCP wrapper: FastMCP registration + tool
                     descriptions with few-shot examples; DJINNVIM_ROOT env
                     var sets the sandbox root
-tests/           ✅ 115 tests (motion, edit, substitute, server round-trips,
-                    viewport format)
+tests/           ✅ 131 tests (motion, edit, substitute, registers, server
+                    round-trips, viewport format)
 ```
 
 Verified end-to-end over the MCP stdio protocol (scripted client running the
 example session below: open → motion → anchored edits → matches → write; a
-second v0.1 script covering f/F → cs → anchored ciw → :%s//g → :g//d → write).
+second v0.1 script covering f/F → cs → anchored ciw → :%s//g → :g//d → write;
+a third v0.2 script covering a cross-file function move — pattern-range cut →
+wrong-name `:put` recovery → `G` → put → write, exact target diffs).
 
 Conventions decided during implementation (in addition to the earlier ones —
 0-based cursor internally / 1-based in output; failed commands never touch
@@ -226,9 +235,69 @@ Next session (in rough priority order):
    match START (anchor on the value you want changed, e.g. `at /15\)/ ciw 60`,
    not `at /timeout=15/`) and that the anchored form takes edit commands
    only, not motions — both hit twice now (v0.1 e2e + dogfood #2).
-3. **Design + build the benchmark** — see "Benchmark rethink" under
-   Evaluation Plan; add model (Opus vs Fable, cold) as a swept dimension
-   alongside file size.
+3. **Dogfood #3 with a move-a-block task** — validates the v0.2 registers
+   live (built 2026-07-10, evidence gate waived by decision; see "Registers:
+   cut / yank / put").
+4. **Design + build the benchmark** (decided 2026-07-10: next session) —
+   see "Benchmark rethink" under Evaluation Plan; add model (Opus vs Fable,
+   cold) as a swept dimension alongside file size.
+
+## Registers: cut / yank / put (designed & built 2026-07-10)
+
+Moving text is the one real capability gap: today it means delete + retype
+via `o`, paying the verbatim-reproduction cost keyhole exists to avoid.
+`:m`/`:t` were considered and rejected — they pack source range *and*
+destination into one blind call with no intermediate verification. Cut →
+navigate → put splits a move into three steps, each echoing a viewport:
+the block is seen leaving, the landing spot is confirmed before pasting,
+the result is verified after.
+
+Why this doesn't violate the no-state rule: the rule is no *invisible*
+state (cursor and buffers are state too). Every cut/yank echoes the
+register name + content, so the register sits high in recent context; the
+model never reproduces the text — the tool holds the authoritative copy,
+the echo is for planning only. The model's entire correctness burden is
+remembering one word.
+
+Design:
+
+- Ex syntax, riding the existing pattern-range parser in `substitute.py`:
+  - `:RANGE y NAME` — yank range into register NAME
+  - `:RANGE d NAME` — cut: delete range into register NAME
+  - `:put NAME` — insert register contents below the cursor line
+- Register names may be whole words (`:put helper`) — semantic extension
+  with ex-shaped surface, low risk under principle #1; letter-vs-word is a
+  cheap future ablation.
+- **Two kinds of delete (the anti-clobber rule):** only an *explicit*
+  register target writes a register. `dd`, `diw`, `:g//d`, and bare
+  `:RANGE d` are plain deletes and never touch registers — a trivial
+  cleanup mid-move can't destroy the block being carried. Bare `:y` writes
+  the unnamed register (a yank has no other purpose); bare `:put` reads it.
+- **Echo format:** `cut 8 lines into register "helper"` plus a stripped
+  content preview (full text for short blocks; first/last lines with an
+  elision marker for long ones). `:put` echoes the standard post-edit
+  viewport.
+- **Wrong-name recovery:** `:put` with an unknown name fails loudly, and
+  the error lists *all* registers — name + stripped contents each — so
+  recovery is one glance at the error, never a guess.
+
+**Built same day (2026-07-10)** — the evidence gate was waived by decision
+(the design was cheap: it rides `substitute.py`'s existing range parser).
+Registers live on `Session`, not per-buffer, so cut in one file / put in
+another works — verified in the e2e script (cross-file function move +
+wrong-name recovery). Dogfood #3's move-a-block task now *validates* the
+feature live instead of gating it. Implementation notes:
+
+- Register ops enter through the `substitute` MCP tool (it's the ex-command
+  surface). Naming smell: a tool called `substitute` also doing `:put` may
+  hurt cold-agent discovery — candidate question for the description pass
+  (rename to `ex`?).
+- Yank moves nothing (cursor stays); cut/`:put` set the cursor like
+  `:g//d`/`o` do. `:put` inserts below the cursor line and echoes the
+  standard post-edit viewport; `:put` takes no range (position with motion
+  first, keeping the land-then-paste steps separately verified).
+- Preview format: blocks ≤7 lines echo in full, longer ones first/last 3
+  with `... N more line(s) ...`; lines clipped at 120 chars.
 
 ## MCP Tools
 
@@ -350,7 +419,7 @@ Per-buffer undo stack, one edit per step. Output: viewport of restored region.
 ## Non-Goals (deliberately excluded)
 
 - **Counted motions** (`3j`, `d5w`) — the known LLM weakness; pattern anchoring replaces them entirely.
-- **Registers, marks, macros, visual mode** — session state that models track poorly; low value once edits are pattern-anchored.
+- **Invisible registers, marks, macros, visual mode** — session state that models track poorly. Amended 2026-07-10: *visible* registers (every cut/yank echoes name + content; wrong names dump the full register list) are in-design — see "Registers: cut / yank / put". What stays excluded is register state the agent can't see in the transcript.
 - **A novel command DSL** — everything must look like vim/ex/vim-surround that the model already knows.
 - **Full-file read tool** — intentionally absent to force the keyhole discipline. (Agents can fall back to their native file-read tools if truly needed.)
 
