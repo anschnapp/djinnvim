@@ -105,6 +105,23 @@ destination def with `"fn P`, so carried trailing blanks land right).
 177 tests; new e2e (`e2e/e2e_offsets.py`): old idiom over-grabs visibly →
 `u` → offset cut → cross-file `P` paste, exact target diffs.
 
+**Benchmark harness is built and smoke-tested (2026-07-11):** see "Benchmark
+v1 design" under Evaluation Plan for the decisions. `benchmark/gen.py`
+(5 seeded task generators, start+target from the same block list, 20 pytest
+regressions), `benchmark/runner.py` (headless `claude -p --output-format
+stream-json` per trial, fresh temp workdir + fresh session each, resumable
+JSONL results, `--max-budget-usd` cap), `benchmark/report.py` (per-cell
+table + silent-error listing). Smoke run (haiku, rename@100, 1 trial each
+condition): both exact-match, keyhole used only djinnvim tools, baseline
+used Read/Edit/Bash; usage/cost/tool-call capture verified. Known caveat:
+headless Claude Code defers MCP tool schemas behind ToolSearch, so keyhole
+pays ~2 extra calls per run to fetch them (baseline's native tools are
+never deferred) — logged per-tool, so it can be subtracted analytically.
+197 tests total. **The full sweep has not been run** — it spends real API
+budget and is the user's call (5 tasks × 4 sizes × 2 models × 2 conditions
+× 5 trials = 400 trials at defaults; start with a subset, e.g.
+`--tasks rename --sizes 100,2000 --trials 2`).
+
 ```
 src/djinnvim/
   buffer.py      ✅ Buffer/Cursor dataclasses, open/write, disk-staleness check,
@@ -678,6 +695,54 @@ Direction decided in conversation, details to be worked out next session:
   rename-across-call-sites; how the no-keyhole baseline agent is run
   (same model, same prompt, minus the MCP server?); token accounting
   (input vs output, per tool call); how many trials per cell for variance.
+
+### Benchmark v1 design (decided 2026-07-11)
+
+Open questions from the rethink, settled in conversation:
+
+- **Driver: headless Claude Code** (`claude -p --output-format stream-json`).
+  Settles token accounting for free: the result event carries exact usage
+  (input/output/cache-read/cache-write tokens), `total_cost_usd`,
+  `num_turns`, `duration_ms` — per trial, programmatically. The stream also
+  lets us count tool calls per tool. No scraping, not rough.
+- **Baseline condition = stock Claude Code:** same model, same prompt, all
+  commonly allowed native tools (Read/Edit/Write/Grep/Bash — if the agent
+  reaches for `sed`, that's legitimate baseline behavior),
+  `--permission-mode bypassPermissions` inside the throwaway trial dir,
+  `--strict-mcp-config` with no servers so the user's global MCP config
+  can't leak in.
+- **Keyhole condition = djinnvim only:** `--mcp-config` pointing at the
+  repo's `djinnvim` binary with `DJINNVIM_ROOT` = trial dir,
+  `--strict-mcp-config`, native file/shell tools disallowed
+  (`--disallowedTools Read Edit Write MultiEdit NotebookEdit Bash Grep
+  Glob`). The prompt tells the agent its editor is the djinnvim tools and
+  nothing else; all operating knowledge must come from the tool
+  descriptions (the cold-agent bet under test).
+- **Cold sessions:** every trial is a fresh `claude -p` process in a fresh
+  temp workdir (no project CLAUDE.md), fresh generated files. Trials per
+  cell configurable, default 5.
+- **Task types (5), all with dogfood provenance:**
+  1. `rename` — whole-word rename across K scattered call sites with a
+     prefix-collision decoy (`fetch_records` vs `fetch_records_cached`).
+  2. `delete-debug` — remove every `log_debug(...)` line, scattered.
+  3. `bump-default` — change one keyword default in one function
+     (needle-in-haystack single edit; numeric decoys elsewhere).
+  4. `quote-style` — normalize single→double quotes file-wide.
+  5. `move-func` — move a function (with an internal blank line) to a
+     different position in the file.
+- **Generation = ground truth:** each task builds the start file from a
+  seeded block list and the target file from the same list with the
+  transformation applied — correctness is a mechanical exact diff.
+  Sizes swept: ~100 / ~500 / ~2000 / ~10000 lines; task difficulty scales
+  naturally (more call sites / debug lines in bigger files).
+- **Models swept:** `opus` (intended workhorse) and `fable`, both cold.
+- **Metrics per trial:** exact-match bool, tokens by kind, cost USD, tool
+  calls (total + per tool), turns, wall clock, and claimed-success vs
+  actual-diff for the silent-error rate. Results appended to a JSONL;
+  a report script aggregates per cell. `--max-budget-usd` caps runaway
+  trials.
+- Layout: `benchmark/` (generator, tasks, runner, report) — separate from
+  `src/`, not part of the installed package.
 
 ### Original plan
 
