@@ -93,6 +93,18 @@ descriptions updated (undo paragraph in `edit`, one-undo-step note in
 `:%s//g` caught in the diff → `u` reverts it whole → scoped redo →
 `dd`+`write`+`u` across the write boundary.
 
+**v0.5 is implemented and green (2026-07-11):** address offsets — vim-style
+`+N`/`-N` on any range address (`/^def /-1`, `$-1`, `10+2`), fixing the
+dogfood #3 over-grab (see "Dogfood #3 findings"): both range addresses are
+inclusive, so `/pat/-1` is the "up to but not including" idiom. Loud
+out-of-range errors; the comma-in-pattern-address parse crash fixed along
+the way (`_split_range` now returns the address list instead of re-joining
+on ","). `substitute` docstring + tool description updated with the
+move-a-function recipe (cut `:/def a/,/^def /-1d fn` → paste ABOVE the
+destination def with `"fn P`, so carried trailing blanks land right).
+177 tests; new e2e (`e2e/e2e_offsets.py`): old idiom over-grabs visibly →
+`u` → offset cut → cross-file `P` paste, exact target diffs.
+
 ```
 src/djinnvim/
   buffer.py      ✅ Buffer/Cursor dataclasses, open/write, disk-staleness check,
@@ -127,7 +139,8 @@ src/djinnvim/
                     60 with first/last-5 elision; zero matches is a loud error;
                     ex-range register fallback: :RANGE y/d NAME, plain
                     :RANGE d (no register); :put removed in v0.3 (paste
-                    with p/P in edit)
+                    with p/P in edit); v0.5: +N/-N address offsets on
+                    patterns, line numbers, $ and .
   session.py     ✅ interface-neutral Session facade (2026-07-10): buffer
                     registry + active buffer + the six operations as
                     string-in/string-out methods; root path sandboxing;
@@ -135,8 +148,8 @@ src/djinnvim/
   server.py      ✅ thin MCP wrapper: FastMCP registration + tool
                     descriptions with few-shot examples; DJINNVIM_ROOT env
                     var sets the sandbox root
-tests/           ✅ 168 tests (motion, edit, substitute, registers, undo,
-                    server round-trips, viewport format)
+tests/           ✅ 177 tests (motion, edit, substitute, registers, undo,
+                    address offsets, server round-trips, viewport format)
 ```
 
 Verified end-to-end over the MCP stdio protocol (scripted client running the
@@ -276,13 +289,74 @@ Next session (in rough priority order):
    benchmark measures.
 3. ~~**Implement undo**~~ ✅ done 2026-07-11 (`u` in `edit`, no redo —
    see "Undo" and v0.4 status).
-4. **Dogfood #3 with a move-a-block task** — validates the v0.3 register
-   surface live (normal-mode y/d/p built 2026-07-11; see "Registers:
-   yank / cut / paste") and undo.
-5. **Design + build the benchmark** (sequencing confirmed 2026-07-11:
+4. ~~**Dogfood #3 with a move-a-block task**~~ ✅ done 2026-07-11 — see
+   "Dogfood #3 findings". Registers + undo validated live; one
+   description bug found (over-grabbing `:/a/,/^def /` example).
+5. ~~**Fix the `substitute` description's range example**~~ ✅ done
+   2026-07-11 as v0.5: `+N`/`-N` address offsets implemented
+   (regression-tested, e2e'd — see v0.5 status), description example now
+   `:/def helper/,/^def /-1d fn` + the move-a-function recipe.
+6. **Design + build the benchmark** (sequencing confirmed 2026-07-11:
    undo → dogfood #3 → benchmark) (decided 2026-07-10: next session) —
    see "Benchmark rethink" under Evaluation Plan; add model (Opus vs Fable,
    cold) as a swept dimension alongside file size.
+
+## Dogfood #3 findings (2026-07-11)
+
+Third live dogfood (Fable, warm operator), targeting the v0.3 register
+surface and v0.4 undo. Task: move-a-block refactor across two generated
+files (`dogfood/pipeline.py` 59 lines, `dogfood/report.py` 15 lines):
+cross-file function move (`validate_row`, which has an *internal blank
+line*), in-file function reorder (`batch` above `apply_discounts`),
+cross-file rename with a docstring decoy, constant bump. Result: **16 tool
+calls, 0 malformed commands, exact mechanical diff on both files, both
+compile, files never read in full.** Plus a 2-call post-run probe.
+
+What held up:
+
+- **The full move loop worked first try in both shapes:** anchored
+  `"b dap` cut → `"b P` paste (in-file reorder, one call each) and
+  ex-range cut → cross-file `p` paste. The `"name` prefix composed with
+  the anchor as designed; cut/yank previews served as the verification —
+  no re-reads, no retyping of moved text.
+- **`dap` under-grab on a function with internal blanks, confirmed live**
+  (deliberate probe): the cut preview showed the truncation *instantly* —
+  echo discipline made a succeeded-but-wrong destructive edit visible in
+  the same tool result. `u` restored the region whole; the wrong register
+  content survived undo (vim semantics, as designed) and was simply
+  overwritten by the follow-up ex-range cut.
+- **Undo's first live outing (3 uses):** restored-region viewport naming
+  the undone command was exactly right for confidence; an unwritten
+  probe-then-undo left the disk byte-identical.
+- **`matches` decoy catch again:** the pipeline docstring contained
+  "summarize"; the pre-check showed 2 hits → scoped anchored `ciw`
+  instead of `:%s//g`. (In report.py the pre-check cleared `:%s//g` for
+  file-wide use.) Principle #4 keeps earning its keep.
+
+New idiom discovered — **cut the leading blank lines with the block**:
+`:22,33d fn` (2 blanks + function) makes the linewise paste between
+functions land with correct spacing on both sides, zero patch-up. Without
+it a function move costs 2 `dd` at the source and 2 bare `O` at the
+destination. The line numbers came straight from a `matches` listing —
+matches as a range-planning tool. Candidate for the tool descriptions /
+future SKILL.md.
+
+**Bug-shaped finding (post-run probe, confirmed live):** the `substitute`
+tool description's own example `:/def helper/,/^def /d fn` **over-grabs** —
+the second address is inclusive (standard ex), so the *next* `def` line
+goes into the register too. A cold agent copying the doc example verbatim
+would corrupt the file (loudly — the preview shows it — but a benchmark
+agent may not look closely). Must fix before the benchmark: replace the
+example with a reliable end anchor (last-line pattern or line numbers from
+`matches`), and/or implement vim's address offsets (`:/a/,/^def /-1`),
+which would also subsume the leading-blanks idiom (`:/def f/-2,/.../`).
+Two independent wants for offsets in one session → v0.5 candidate.
+**Fixed same day as v0.5** (offsets implemented, description example
+corrected — see v0.5 status). Note learned while fixing: do NOT combine
+`-2` leading blanks *and* `/^def /-1` in one cut — that carries blanks on
+both sides (4 total) and starves the source. The clean recipe is cut
+function + trailing blanks (`/^def /-1`), paste above the destination
+def with `P`; it's now the description's example.
 
 ## Registers: yank / cut / paste (revised 2026-07-10, later)
 

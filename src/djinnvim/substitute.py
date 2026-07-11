@@ -11,6 +11,12 @@ Supported forms (leading `:` optional):
                              after the start line
   :g/DEBUG/d                 delete every matching line
 
+Any address takes a vim-style offset: `/^def /-1` (line before the next
+def), `$-1`, `10+2`. Both range addresses are INCLUSIVE, so `-1` on the
+end address is the idiom for "up to but not including" — e.g. cut a whole
+function without grabbing the next def line:
+`:/def helper/,/^def /-1d fn`.
+
 Ex-range register fallback (the normal-mode surface in edit.py — yy,
 "name yap, "name dd, p/P — is primary; these ranges cover pattern-bounded
 blocks that text objects can't select, e.g. a Python function with internal
@@ -45,7 +51,8 @@ class SubstituteError(Exception):
 _PATTERN = r"((?:\\.|[^/])*)"
 _GLOBAL_DELETE = re.compile(rf"^g/{_PATTERN}/d$")
 _SUBST = re.compile(rf"^s/{_PATTERN}/{_PATTERN}/([gi]*)$")
-_ADDR = re.compile(rf"^(\d+|\$|\.|/{_PATTERN}/)")
+_ADDR = re.compile(rf"^(?:\d+|\$|\.|/{_PATTERN}/)(?:[+-]\d+)?")
+_OFFSET = re.compile(r"([+-]\d+)$")
 _REGISTER_OP = re.compile(r"^(y|d)(?:\s+(\w+))?$")
 
 
@@ -94,36 +101,36 @@ def _run(
     raise SubstituteError(
         f"cannot parse {command!r} "
         "(supported: :%s/old/new/g  :N,Ms/old/new/  :/pat/,/pat/s/old/new/  "
-        ":g/pat/d  :N,My NAME  :N,Md NAME  :N,Md — paste with p/P in edit)"
+        ":g/pat/d  :N,My NAME  :N,Md NAME  :N,Md — paste with p/P in edit; "
+        "addresses take +N/-N offsets, e.g. :/def a/,/^def /-1d fn)"
     )
 
 
-def _split_range(cmd: str) -> tuple[str, str]:
-    """Split '10,40s/a/b/' into ('10,40', 's/a/b/'). Range may be empty or %."""
+def _split_range(cmd: str) -> tuple[list[str], str]:
+    """Split '10,40s/a/b/' into (['10', '40'], 's/a/b/'). ['%'] for a % range."""
     if cmd.startswith("%"):
-        return "%", cmd[1:]
+        return ["%"], cmd[1:]
     addrs = []
     rest = cmd
     m = _ADDR.match(rest)
     if m:
-        addrs.append(m.group(1))
+        addrs.append(m.group(0))
         rest = rest[m.end():]
         if rest.startswith(","):
             m = _ADDR.match(rest[1:])
             if not m:
                 raise SubstituteError(f"bad range address after ',' in {cmd!r}")
-            addrs.append(m.group(1))
+            addrs.append(m.group(0))
             rest = rest[1 + m.end():]
-    return ",".join(addrs), rest
+    return addrs, rest.lstrip()
 
 
-def _resolve_range(buf: Buffer, range_part: str) -> tuple[int, int]:
+def _resolve_range(buf: Buffer, addrs: list[str]) -> tuple[int, int]:
     """Resolve a range to 0-based inclusive (start, end) line indices."""
-    if range_part == "%":
+    if addrs == ["%"]:
         return 0, len(buf.lines) - 1
-    if not range_part:
+    if not addrs:
         return buf.cursor.line, buf.cursor.line
-    addrs = range_part.split(",", 1)
     start = _resolve_addr(buf, addrs[0], search_from=buf.cursor.line)
     if len(addrs) == 1:
         return start, start
@@ -136,25 +143,40 @@ def _resolve_range(buf: Buffer, range_part: str) -> tuple[int, int]:
 
 
 def _resolve_addr(buf: Buffer, addr: str, search_from: int) -> int:
+    full = addr
+    offset = 0
+    m = _OFFSET.search(addr)
+    if m:
+        offset = int(m.group(1))
+        addr = addr[: m.start()]
     if addr == "$":
-        return len(buf.lines) - 1
-    if addr == ".":
-        return buf.cursor.line
-    if addr.startswith("/"):
+        i = len(buf.lines) - 1
+    elif addr == ".":
+        i = buf.cursor.line
+    elif addr.startswith("/"):
         pattern = addr[1:-1]
         rx = _compile(pattern, "")
         n = len(buf.lines)
         for off in range(n):
             i = (search_from + off) % n
             if rx.search(buf.lines[i]):
-                return i
-        raise SubstituteError(f"no line matches address /{pattern}/")
-    n = int(addr)
-    if not 1 <= n <= len(buf.lines):
+                break
+        else:
+            raise SubstituteError(f"no line matches address /{pattern}/")
+    else:
+        n = int(addr)
+        if not 1 <= n <= len(buf.lines):
+            raise SubstituteError(
+                f"line {n} out of range (file has {len(buf.lines)} lines)"
+            )
+        i = n - 1
+    i += offset
+    if not 0 <= i < len(buf.lines):
         raise SubstituteError(
-            f"line {n} out of range (file has {len(buf.lines)} lines)"
+            f"address {full} resolves to line {i + 1} "
+            f"(file has {len(buf.lines)} lines)"
         )
-    return n - 1
+    return i
 
 
 def _compile(pattern: str, flags: str) -> re.Pattern:

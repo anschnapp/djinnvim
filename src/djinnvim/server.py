@@ -111,24 +111,31 @@ def substitute(command: str) -> str:
     matching lines). Flags: g (all per line), i (ignore case). Regex and
     replacement are Python re syntax (\\1 for groups). In a pattern range
     the second address is searched forward FROM the first — "from A to the
-    next B". Returns the substitution count + a compact diff of changed
-    lines. Zero matches is a loud error; the buffer is untouched. Each
-    command here is one undo step — if the diff shows an over-match,
+    next B" — and BOTH addresses are inclusive: `/^def /` as the end
+    includes that def line itself. Any address takes a vim-style `+N`/`-N`
+    offset (`/^def /-1`, `$-1`, `10+2`); end on `/pat/-1` for "up to but
+    not including pat". Returns the substitution count + a compact diff of
+    changed lines. Zero matches is a loud error; the buffer is untouched.
+    Each command here is one undo step — if the diff shows an over-match,
     edit("u") reverts it whole.
 
     Register ranges — when a block is bounded by patterns rather than a
     text object (e.g. a Python function with internal blank lines, where
     dap under-grabs): `:RANGE y NAME` yanks the range into register NAME,
-    `:RANGE d NAME` cuts it (`:10,20y block`, `:/def helper/,/^def /d fn`).
-    Paste with p/P in the edit tool (works across files). Bare `:RANGE d`
-    is a plain delete and never touches a register. Yank/cut echo the
-    stored content; you never retype it.
+    `:RANGE d NAME` cuts it (`:10,20y block`,
+    `:/def helper/,/^def /-1d fn` — the -1 keeps the next def line out of
+    the cut). Paste with p/P in the edit tool (works across files).
+    Move-a-function recipe: that cut carries the function plus the blank
+    lines after it, so paste it ABOVE the destination def
+    (`at /def target/ "fn P`) and the spacing lands right on both sides.
+    Bare `:RANGE d` is a plain delete and never touches a register.
+    Yank/cut echo the stored content; you never retype it.
 
     Examples:
       substitute(":%s/parse_config/load_config/g")
       substitute(":g/print\\(.*DEBUG/d")
       substitute(":/def render/,/^$/s/ctx/context/g")
-      substitute(":/def helper/,/^def /d fn")  then  edit("\\"fn p")
+      substitute(":/def helper/,/^def /-1d fn")  then  edit("at /def target/ \\"fn P")
     """
     return session.substitute(command)
 

@@ -173,6 +173,86 @@ def test_unparseable_command_is_loud():
         execute(buf, ":wq")
 
 
+# --- address offsets (v0.5) ---
+
+FUNCS = [
+    "def validate_row(row):",    # 1
+    "    missing = []",          # 2
+    "",                          # 3  internal blank — dap under-grabs here
+    "    return True, []",       # 4
+    "",                          # 5
+    "",                          # 6
+    "def render_failures(x):",   # 7
+    "    return x",              # 8
+]
+
+
+def test_pattern_end_offset_excludes_next_def():
+    # regression (dogfood #3): :/def a/,/^def /d fn cut the next def line too;
+    # /^def /-1 is the reliable move-a-function idiom
+    buf = make(FUNCS)
+    regs = {}
+    out = execute(buf, ":/def validate_row/,/^def /-1d fn", regs)
+    assert regs["fn"].lines == FUNCS[0:6]   # function + trailing blanks, no next def
+    assert buf.lines == FUNCS[6:]
+    assert "cut 6 line(s) (1–6)" in out
+
+
+def test_pattern_end_offset_with_space_before_command():
+    buf = make(FUNCS)
+    regs = {}
+    execute(buf, ":/def validate_row/,/^def /-1 d fn", regs)
+    assert regs["fn"].lines == FUNCS[0:6]
+
+
+def test_plus_offset_on_start_pattern():
+    buf = make(FUNCS)
+    execute(buf, ":/def validate_row/+1,/return True/s/missing/found/")
+    assert buf.lines[1] == "    found = []"
+    assert buf.lines[0] == "def validate_row(row):"   # start line excluded
+
+
+def test_offset_on_dollar():
+    buf = make(LINES)
+    execute(buf, ":$-1,$s/x/z/g")
+    assert buf.lines[4] == "def render(z):"
+    assert buf.lines[5] == "    return parse(z)"
+    assert buf.lines[1] == "    y = x + x"            # before range: untouched
+
+
+def test_offset_on_numeric_address():
+    buf = make(LINES)
+    execute(buf, ":1+1,2s/x/z/g")
+    assert buf.lines[0] == "def parse(x):"
+    assert buf.lines[1] == "    y = z + z"
+
+
+def test_offset_out_of_range_is_loud():
+    buf = make(LINES)
+    with pytest.raises(SubstituteError, match=r"resolves to line 0"):
+        execute(buf, ":/def parse/-1,$s/x/z/")
+    assert buf.lines == LINES
+
+
+def test_offset_backwards_range_is_loud():
+    buf = make(LINES)
+    with pytest.raises(SubstituteError, match="backwards range"):
+        execute(buf, ":5,5-2s/x/z/")
+    assert buf.lines == LINES
+
+
+def test_offset_inside_pattern_is_not_an_offset():
+    buf = make(["x+1 = y", "other"])
+    execute(buf, r":/x\+1/,/x\+1/s/y/z/")
+    assert buf.lines == ["x+1 = z", "other"]
+
+
+def test_pattern_address_may_contain_comma():
+    buf = make(["a, b", "keep", "end"])
+    execute(buf, ":/a, b/,/keep/s/e/E/g")
+    assert buf.lines == ["a, b", "kEEp", "end"]
+
+
 # --- regex features ---
 
 def test_group_references():
