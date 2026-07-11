@@ -10,7 +10,7 @@ Two user groups, two interfaces, **one program**: the same core is exposed both 
 
 - All logic lives in an interface-neutral `Session` class (`session.py`): open buffers + active buffer as state, the six operations as string-in/string-out methods (errors included, as `error: ...` strings).
 - `server.py` is a thin MCP wrapper (FastMCP registration + tool descriptions only). The future `cli.py` will be an equally thin argparse wrapper.
-- **CLI state model (decided): state file, no daemon.** A CLI invocation is a fresh process per command, so `Session` state (buffers, cursor, last search) gets serialized to a state file between calls (e.g. `~/.local/state/djinnvim/`); the `Buffer` dataclass is plain data and JSON-serializable as-is. Rejected: a background daemon (lifecycle babysitting for no gain at these file sizes).
+- **CLI state model (revised 2026-07-11): daemon + thin client, no state file.** A per-sandbox-root daemon holds the live `Session`; the CLI is a tiny client talking to it over a Unix socket. Reverses the 2026-07-10 state-file decision: undo stacks and registers made the serialize-every-`Session`-field burden grow with each feature, and a live process gives exact semantic parity with the MCP path — same in-memory `Session`, zero serialization drift. **Stateless session-to-session:** the `Session` lives and dies with the daemon process — nothing is persisted across restarts, matching the MCP server's semantics exactly (unwritten buffers, registers, and undo stacks are gone when the daemon exits; disk holds only what was `write`n). Lifecycle is ssh-agent-shaped (auto-spawn on first client call, idle self-exit, die/respawn on binary version mismatch). The daemon is conceptually just the MCP server kept alive for people who don't run MCP clients; **the agent-facing MCP interface itself stays local stdio** (spawned per client, as today) — the socket exists only because a fresh-process-per-command CLI needs something long-running to talk to. Open questions, to settle when the CLI is actually built (still post-benchmark): socket naming per root, exact spawn/shutdown policy, and whether the daemon speaks MCP framing over the socket (CLI = thin MCP client) or a minimal JSON-RPC.
 - **Only the MCP stack is built and tested for now**; the CLI + skill come after the benchmark phase. The cold-agent description pass benefits both: the same descriptions that must carry a cold Opus agent over MCP become the backbone of the skill's SKILL.md.
 
 ## Motivation
@@ -82,10 +82,22 @@ substitute descriptions). 151 tests; e2e script updated to the
 normal-mode move (anchored `"block dap` cut → wrong-name `p` recovery →
 cross-file paste).
 
+**v0.4 is implemented and green (2026-07-11):** undo (see "Undo") — `u` in
+`edit`, per-buffer capped snapshot stack (`UndoEntry`, pushed by any
+content-changing edit or substitute command; yanks and failed commands push
+nothing), dirty recomputed against `saved_lines` so undoing across a write
+is exact, registers survive undo (vim semantics), echo = restored-region
+viewport naming the undone command + remaining step count. Tool
+descriptions updated (undo paragraph in `edit`, one-undo-step note in
+`substitute`). 168 tests; new e2e (`e2e/e2e_undo.py`): over-matching
+`:%s//g` caught in the diff → `u` reverts it whole → scoped redo →
+`dd`+`write`+`u` across the write boundary.
+
 ```
 src/djinnvim/
   buffer.py      ✅ Buffer/Cursor dataclasses, open/write, disk-staleness check,
-                    saved_lines snapshot (for write's "N lines changed" report)
+                    saved_lines snapshot (for write's "N lines changed" report);
+                    v0.4: UndoEntry + capped undo_stack (MAX_UNDO 100)
   viewport.py    ✅ renderer: line-number gutter, → cursor line, ^ column marker,
                     2/1/2 default context; CURSOR_STYLE config flag (caret only in v0)
   motion.py      ✅ /  ?  n  N  :N  gg  G  f<char>  F<char>; wrapping search
@@ -103,7 +115,9 @@ src/djinnvim/
                     (no dirty, no viewport — echo carries content), p/P paste
                     (linewise below/above, charwise within line), `"name`
                     prefix (word names take a space, `"ayy` vim-style works),
-                    prefix composes with the anchor in either order
+                    prefix composes with the anchor in either order; v0.4:
+                    `u` undo (restored-region viewport, names the undone
+                    command, remaining-step count)
   registers.py   ✅ Register dataclass (lines + linewise kind), shared
                     preview/clip/display/missing-register helpers for both
                     surfaces
@@ -121,8 +135,8 @@ src/djinnvim/
   server.py      ✅ thin MCP wrapper: FastMCP registration + tool
                     descriptions with few-shot examples; DJINNVIM_ROOT env
                     var sets the sandbox root
-tests/           ✅ 151 tests (motion, edit, substitute, registers, server
-                    round-trips, viewport format)
+tests/           ✅ 168 tests (motion, edit, substitute, registers, undo,
+                    server round-trips, viewport format)
 ```
 
 Verified end-to-end over the MCP stdio protocol (scripted client running the
@@ -260,10 +274,13 @@ Next session (in rough priority order):
    only, TEXT conventions, n/N deviation, pattern-range semantics, register
    discoverability. Cold-Opus validation still pending — that's what the
    benchmark measures.
-3. **Dogfood #3 with a move-a-block task** — validates the v0.3 register
+3. ~~**Implement undo**~~ ✅ done 2026-07-11 (`u` in `edit`, no redo —
+   see "Undo" and v0.4 status).
+4. **Dogfood #3 with a move-a-block task** — validates the v0.3 register
    surface live (normal-mode y/d/p built 2026-07-11; see "Registers:
-   yank / cut / paste").
-4. **Design + build the benchmark** (decided 2026-07-10: next session) —
+   yank / cut / paste") and undo.
+5. **Design + build the benchmark** (sequencing confirmed 2026-07-11:
+   undo → dogfood #3 → benchmark) (decided 2026-07-10: next session) —
    see "Benchmark rethink" under Evaluation Plan; add model (Opus vs Fable,
    cold) as a swept dimension alongside file size.
 
@@ -366,6 +383,35 @@ feature live instead of gating it. Implementation notes:
 - Preview format: blocks ≤7 lines echo in full, longer ones first/last 3
   with `... N more line(s) ...`; lines clipped at 120 chars.
 
+## Undo (decided 2026-07-11)
+
+Pulled off the deferred list, to be built **before the benchmark**. Rationale:
+the uncovered failure case is *succeeded-but-wrong* destructive edits (an
+over-matching `:g//d`, an oversized `dap`, a misplaced `p`) — failed commands
+never touch the buffer and re-`open` covers the full-reset case, but granular
+recovery today means retyping the pre-image (the verbatim-reproduction cost
+keyhole exists to avoid; for bare deletes the content isn't even in the echo)
+or losing every good edit since the last write. And cold agents will type `u`
+after a bad echo whether it exists or not — that reflex is in the weights; if
+it fails, the likely fallback is bailing to native full-file tools
+mid-benchmark. Evidence gate waived knowingly (same shape as registers): warm
+dogfooders never reached for what they knew was absent, and cold benchmark
+agents can't file friction reports.
+
+Decisions:
+
+- **Surface: `u` inside `edit`** (it's a normal-mode command; that's the vim
+  surface), not the separate `undo` tool sketched earlier in this doc — one
+  less tool description for a cold agent to discover.
+- **One edit per step; `u` crosses `write` boundaries** (vim semantics —
+  `write` isn't special from the buffer's perspective).
+- **No redo** — "undid, then regretted it" is rare, and redo drags in
+  branch-on-edit-after-undo semantics for no payoff. Stays deferred.
+- **Echo:** viewport of the restored region (visibility rule as usual);
+  summary names the undone command.
+- Implementation: per-buffer snapshot stack of the line list (+ cursor)
+  taken before each successful mutation; capped depth.
+
 ## MCP Tools
 
 ### `open`
@@ -455,7 +501,8 @@ Save the active buffer to disk.
 - **Output:** confirmation + lines changed since last write. Buffers are in-memory until written; `open` warns if a buffer has unwritten changes.
 
 ### `undo` / `redo`
-Per-buffer undo stack, one edit per step. Output: viewport of restored region.
+Superseded 2026-07-11 (see "Undo" above): undo is `u` inside `edit`, not a
+separate tool; redo stays deferred.
 
 ## Viewport Format
 

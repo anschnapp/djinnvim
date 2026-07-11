@@ -80,6 +80,12 @@ def edit(command: str) -> str:
     Yanks and cuts echo the register content; a wrong name on p fails
     loudly and lists every register.
 
+    Undo: `u` reverts the last buffer change (one change per call — repeat
+    to go further back; works back through writes too, though only `write`
+    puts the reverted state on disk). If a viewport shows an edit or
+    substitute hit the wrong place, `u` is the recovery — no need to
+    re-open or retype. There is no redo.
+
     Returns a one-line summary + the post-edit viewport. Failed commands
     never modify the buffer.
 
@@ -90,6 +96,7 @@ def edit(command: str) -> str:
       edit("o import sys")                 -> new line below the cursor
       edit("at /def helper/ \\"fn dap")     -> cut function into register fn
       edit("\\"fn p")                       -> paste it below the cursor
+      edit("u")                            -> undo the last change
     """
     return session.edit(command)
 
@@ -105,7 +112,9 @@ def substitute(command: str) -> str:
     replacement are Python re syntax (\\1 for groups). In a pattern range
     the second address is searched forward FROM the first — "from A to the
     next B". Returns the substitution count + a compact diff of changed
-    lines. Zero matches is a loud error; the buffer is untouched.
+    lines. Zero matches is a loud error; the buffer is untouched. Each
+    command here is one undo step — if the diff shows an over-match,
+    edit("u") reverts it whole.
 
     Register ranges — when a block is bounded by patterns rather than a
     text object (e.g. a Python function with internal blank lines, where

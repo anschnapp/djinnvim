@@ -53,6 +53,17 @@ def execute(
     buf: Buffer, command: str, registers: dict[str, Register] | None = None
 ) -> str:
     """Apply one ex command; return the report (count + compact diff)."""
+    pre_lines = list(buf.lines)
+    pre_cursor = (buf.cursor.line, buf.cursor.col)
+    report = _run(buf, command, registers)
+    if buf.lines != pre_lines:  # yanks don't mutate and push nothing
+        buf.push_undo(pre_lines, pre_cursor, command.strip())
+    return report
+
+
+def _run(
+    buf: Buffer, command: str, registers: dict[str, Register] | None
+) -> str:
     cmd = command.strip()
     if cmd.startswith(":"):
         cmd = cmd[1:]

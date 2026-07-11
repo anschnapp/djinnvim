@@ -9,6 +9,7 @@ Commands: ciw caw  ci( ci{ ci[ ci" ci'  (+ di/da variants)  diw
           cs{old}{new}  ds{char}  ysiw{char}  (vim-surround)
           yy  y{i,a}{object}  p P  with register prefix `"name <cmd>`
           ("name yap / "name dd cuts / "name p; bare y→unnamed register)
+          u (undo — one buffer change per step, crosses writes; no redo)
 Deferred: `.` repeat, cit/dit, J, >> <<
 
 Every edit returns (summary, affected_first, affected_last) so the server
@@ -56,6 +57,11 @@ def execute(
         registers = {}
     saved = (buf.cursor.line, buf.cursor.col)
 
+    if command.strip() == "u":
+        return _undo(buf)
+    original = command  # kept for the undo-echo label
+    pre_lines = list(buf.lines)
+
     # Register prefix may come before or after the anchor:
     # `"name at /pat/ yap` and `at /pat/ "name yap` both work.
     reg_name, command = _split_register(command)
@@ -94,10 +100,49 @@ def execute(
         raise
     if mutates:
         buf.dirty = True
+        if buf.lines != pre_lines:  # no-op mutations (e.g. `r` with same char) skip
+            buf.push_undo(pre_lines, saved, original)
     if anchor_note:
         head, sep, rest = summary.partition("\n")
         summary = head + anchor_note + sep + rest
     return summary, first, last
+
+
+def _undo(buf: Buffer) -> tuple[str, int, int]:
+    """u: pop one snapshot. Restores lines + pre-command cursor; dirty is
+    recomputed against saved_lines so undoing back across a write is exact.
+    Registers deliberately survive (vim semantics)."""
+    if not buf.undo_stack:
+        raise EditError("nothing to undo")
+    entry = buf.undo_stack.pop()
+    before = buf.lines
+    buf.lines = entry.lines
+    buf.cursor.line, buf.cursor.col = entry.cursor_line, entry.cursor_col
+    buf.dirty = buf.lines != buf.saved_lines
+
+    label = clip(entry.command.splitlines()[0])
+    if "\n" in entry.command:
+        label += "…"
+    summary = f"undid: {label}"
+    if buf.undo_stack:
+        summary += f" ({len(buf.undo_stack)} more undo step(s))"
+    first, last = _restored_span(before, buf.lines)
+    return summary, first, last
+
+
+def _restored_span(before: list[str], after: list[str]) -> tuple[int, int]:
+    """(first, last) 0-based span in `after` where it differs from `before`,
+    for the post-undo viewport."""
+    n = min(len(before), len(after))
+    lo = 0
+    while lo < n and before[lo] == after[lo]:
+        lo += 1
+    hi_b, hi_a = len(before) - 1, len(after) - 1
+    while hi_b >= lo and hi_a >= lo and before[hi_b] == after[hi_a]:
+        hi_b -= 1
+        hi_a -= 1
+    last_idx = len(after) - 1  # buffer is never empty
+    return min(lo, last_idx), min(max(hi_a, lo), last_idx)
 
 
 def _split_register(command: str) -> tuple[str | None, str]:
@@ -372,7 +417,7 @@ def _apply(buf: Buffer, cmd: str) -> tuple[str, int, int]:
         f"unknown edit command: {cmd!r} "
         "(supported: ciw/caw ci(/{{/[/\"/' di/da-variants cip/dap dd cc D C x r "
         "o O A I cs<old><new> ds<char> ysiw<char> yy y<i|a><obj> p P "
-        "\"name-prefix for registers)"
+        "\"name-prefix for registers, u to undo)"
     )
 
 
