@@ -63,14 +63,15 @@ async def main() -> None:
             print(f"\n>>> {tool} {kw}\n{text}")
             return text
 
-        # cut helper() out of a.py (pattern range), blank line included
+        # cut helper() out of a.py: anchored normal-mode cut, one call
+        # (dap takes the trailing blank line)
         await call("open", path="a.py")
-        out = await call("substitute", command=":/def helper/,/^$/d block")
+        out = await call("edit", command='at /def helper/ "block dap')
         assert 'cut 4 line(s) (3–6) into register "block"' in out
         assert "def helper(x):" in out  # preview echoes the content
 
         # wrong-name recovery: error lists registers with previews
-        out = await call("substitute", command=":put blok")
+        out = await call("edit", command='"blok p')
         assert 'error: no register "blok"' in out
         assert '"block": def helper(x): ... (4 lines)' in out
 
@@ -79,8 +80,8 @@ async def main() -> None:
         # paste into b.py at the end
         await call("open", path="b.py")
         await call("motion", command="G")
-        out = await call("substitute", command=":put block")
-        assert "put 4 line(s)" in out and "→" in out
+        out = await call("edit", command='"block p')
+        assert "pasted 4 line(s)" in out and "→" in out
         # trailing blank line came along; drop it
         await call("edit", command="dd")
         await call("write")

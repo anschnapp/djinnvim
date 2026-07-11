@@ -1,23 +1,27 @@
-"""Edit command parsing and execution — v0.1 subset.
+"""Edit command parsing and execution — v0.1 subset + v0.3 registers.
 
 Anchored form (preferred): `at /pattern/ <command>` — search, then apply.
 Optional ordinal: `at 2nd /pattern/ <command>` (2nd match after cursor).
 Anchored summaries carry the ambiguity count: `changed line 9 (match 1 of 3)`.
 
 Commands: ciw caw  ci( ci{ ci[ ci" ci'  (+ di/da variants)  diw
-          dd  cc  o O  A I  D C  x r
+          cip/cap dip/dap (paragraph)  dd  cc  o O  A I  D C  x r
           cs{old}{new}  ds{char}  ysiw{char}  (vim-surround)
-Deferred: `.` repeat, cit/dit, dap, J, >> <<
+          yy  y{i,a}{object}  p P  with register prefix `"name <cmd>`
+          ("name yap / "name dd cuts / "name p; bare y→unnamed register)
+Deferred: `.` repeat, cit/dit, J, >> <<
 
 Every edit returns (summary, affected_first, affected_last) so the server
-can render the post-edit viewport. Failures raise EditError loudly and
-never modify the buffer or move the cursor.
+can render the post-edit viewport; first/last are None when the echo
+already carries the content (yanks, register cuts). Failures raise
+EditError loudly and never modify the buffer or move the cursor.
 """
 
 import re
 
 from . import motion
 from .buffer import Buffer
+from .registers import Register, clip, display, missing, preview
 
 
 class EditError(Exception):
@@ -25,21 +29,36 @@ class EditError(Exception):
 
 
 _ANCHOR = re.compile(r"^at\s+(?:(\d+)(?:st|nd|rd|th)\s+)?/((?:\\.|[^/])*)/\s*")
-_OBJECT_CMD = re.compile(r"^([cd])([ia])([wW(){}\[\]\"'`])(?:\s(.*))?$", re.DOTALL)
+_OBJECT_CMD = re.compile(r"^([cd])([ia])([wWp(){}\[\]\"'`])(?:\s(.*))?$", re.DOTALL)
 _INSERT_CMD = re.compile(r"^(cc|C|o|O|A|I)(?:\s(.*))?$", re.DOTALL)
 _CS_CMD = re.compile(r"^cs(.)(.)$")
 _DS_CMD = re.compile(r"^ds(.)$")
 _YSIW_CMD = re.compile(r"^ysiw(.)$")
+_YANK_CMD = re.compile(r"^y(y|[ia][wWp(){}\[\]\"'`])(\s.*)?$", re.DOTALL)
+# word-named register needs a space ("block yy); vim's no-space form works
+# for single letters ("ayy)
+_REGISTER_WORD = re.compile(r"^\"(\w+)\s+")
+_REGISTER_CHAR = re.compile(r"^\"(\w)(?=\S)")
 
 _BRACKETS = {"(": "()", ")": "()", "{": "{}", "}": "{}", "[": "[]", "]": "[]"}
 _QUOTES = "\"'`"
 
 
-def execute(buf: Buffer, command: str) -> tuple[str, int, int]:
-    """Apply one edit command; return (summary, first_line, last_line) 0-based."""
+def execute(
+    buf: Buffer, command: str, registers: dict[str, Register] | None = None
+) -> tuple[str, int | None, int | None]:
+    """Apply one edit command; return (summary, first_line, last_line) 0-based.
+    first/last are None when there is no viewport to render (yanks and
+    register cuts echo their content instead)."""
     # Trailing spaces are preserved: TEXT like `I # ` keeps its trailing space.
     command = command.lstrip().rstrip("\n")
+    if registers is None:
+        registers = {}
     saved = (buf.cursor.line, buf.cursor.col)
+
+    # Register prefix may come before or after the anchor:
+    # `"name at /pat/ yap` and `at /pat/ "name yap` both work.
+    reg_name, command = _split_register(command)
 
     anchor_note = ""
     m = _ANCHOR.match(command)
@@ -65,13 +84,151 @@ def execute(buf: Buffer, command: str) -> tuple[str, int, int]:
         anchor_note = f" (match {chosen + 1} of {len(hits)})"
         command = rest
 
+    if reg_name is None:
+        reg_name, command = _split_register(command)
+
     try:
-        summary, first, last = _apply(buf, command)
+        summary, first, last, mutates = _dispatch(buf, command, reg_name, registers)
     except EditError:
         buf.cursor.line, buf.cursor.col = saved
         raise
-    buf.dirty = True
-    return summary + anchor_note, first, last
+    if mutates:
+        buf.dirty = True
+    if anchor_note:
+        head, sep, rest = summary.partition("\n")
+        summary = head + anchor_note + sep + rest
+    return summary, first, last
+
+
+def _split_register(command: str) -> tuple[str | None, str]:
+    if not command.startswith('"'):
+        return None, command
+    m = _REGISTER_WORD.match(command) or _REGISTER_CHAR.match(command)
+    if not m:
+        raise EditError(
+            'bad register prefix: use "name <cmd> (e.g. "block yap, "block p)'
+        )
+    return m.group(1), command[m.end():]
+
+
+def _dispatch(
+    buf: Buffer, cmd: str, reg_name: str | None, registers: dict[str, Register]
+) -> tuple[str, int | None, int | None, bool]:
+    bare = cmd.strip()
+
+    m = _YANK_CMD.match(bare)
+    if m and not _YSIW_CMD.match(bare):
+        if m.group(2) and m.group(2).strip():
+            raise EditError(f"y{m.group(1)} takes no TEXT (yank only copies)")
+        return _yank(buf, m.group(1), reg_name, registers)
+
+    if bare in ("p", "P"):
+        return _paste(buf, bare, reg_name, registers)
+
+    if reg_name is not None:
+        return _cut(buf, bare, reg_name, registers)
+
+    summary, first, last = _apply(buf, cmd)
+    return summary, first, last, True
+
+
+def _yank(
+    buf: Buffer, what: str, name: str | None, registers: dict[str, Register]
+) -> tuple[str, int | None, int | None, bool]:
+    """yy / y{i,a}{object}: copy into a register. Buffer and cursor untouched."""
+    i = buf.cursor.line
+    if what == "y":
+        lines = [buf.lines[i]]
+        registers[name or ""] = Register(lines, linewise=True)
+        head = f"yanked line {i + 1} into {display(name)}"
+        return head + "\n" + preview(lines), None, None, False
+    scope, obj = what[0], what[1]
+    if obj == "p":
+        a, b = _paragraph_span(buf.lines, i, around=scope == "a")
+        lines = list(buf.lines[a:b + 1])
+        registers[name or ""] = Register(lines, linewise=True)
+        head = f"yanked {len(lines)} line(s) ({a + 1}–{b + 1}) into {display(name)}"
+        return head + "\n" + preview(lines), None, None, False
+    start, end = find_object(buf.lines[i], buf.cursor.col, obj, around=scope == "a")
+    text = buf.lines[i][start:end]
+    registers[name or ""] = Register([text], linewise=False)
+    return f'yanked "{clip(text)}" into {display(name)}', None, None, False
+
+
+def _paste(
+    buf: Buffer, cmd: str, name: str | None, registers: dict[str, Register]
+) -> tuple[str, int | None, int | None, bool]:
+    """p/P: paste a register. Linewise below/above the cursor line, charwise
+    after/at the cursor column."""
+    key = name or ""
+    if key not in registers:
+        raise EditError(missing(name, registers))
+    reg = registers[key]
+    i = buf.cursor.line
+
+    if reg.linewise:
+        at = i + 1 if cmd == "p" else i
+        buf.lines[at:at] = list(reg.lines)
+        first, last = at, at + len(reg.lines) - 1
+        buf.cursor.line, buf.cursor.col = last, 0
+        where = f"{'below' if cmd == 'p' else 'above'} line {i + 1}"
+        head = f"pasted {len(reg.lines)} line(s) from {display(name)} {where}"
+        return head, first, last, True
+
+    text = reg.lines[0] if reg.lines else ""
+    line = buf.lines[i]
+    col = min(buf.cursor.col + 1, len(line)) if cmd == "p" else buf.cursor.col
+    buf.lines[i] = line[:col] + text + line[col:]
+    buf.cursor.col = col
+    head = f'pasted "{clip(text)}" from {display(name)} on line {i + 1}'
+    return head, i, i, True
+
+
+def _cut(
+    buf: Buffer, bare: str, name: str, registers: dict[str, Register]
+) -> tuple[str, int | None, int | None, bool]:
+    """Explicit-register delete: `"name dd` / `"name d{i,a}{object}` cuts
+    into the register (the only deletes that touch registers)."""
+    i = buf.cursor.line
+
+    if bare == "dd":
+        lines = [buf.lines[i]]
+        registers[name] = Register(lines, linewise=True)
+        del buf.lines[i]
+        if not buf.lines:
+            buf.lines = [""]
+        buf.cursor.line = min(i, len(buf.lines) - 1)
+        buf.cursor.col = 0
+        head = f"cut line {i + 1} into {display(name)}"
+        return head + "\n" + preview(lines), None, None, True
+
+    m = _OBJECT_CMD.match(bare)
+    if m and m.group(1) == "d":
+        _, scope, obj, text = m.groups()
+        if text and text.strip():
+            raise EditError(f"d{scope}{obj} takes no TEXT")
+        if obj == "p":
+            a, b = _paragraph_span(buf.lines, i, around=scope == "a")
+            lines = list(buf.lines[a:b + 1])
+            registers[name] = Register(lines, linewise=True)
+            del buf.lines[a:b + 1]
+            if not buf.lines:
+                buf.lines = [""]
+            buf.cursor.line = min(a, len(buf.lines) - 1)
+            buf.cursor.col = 0
+            head = f"cut {len(lines)} line(s) ({a + 1}–{b + 1}) into {display(name)}"
+            return head + "\n" + preview(lines), None, None, True
+        start, end = find_object(buf.lines[i], buf.cursor.col, obj, around=scope == "a")
+        cut_text = buf.lines[i][start:end]
+        registers[name] = Register([cut_text], linewise=False)
+        buf.lines[i] = buf.lines[i][:start] + buf.lines[i][end:]
+        buf.cursor.col = start
+        return f'cut "{clip(cut_text)}" into {display(name)} (line {i + 1})', i, i, True
+
+    raise EditError(
+        f'register prefix "{name} applies to y (yank), d (cut into register), '
+        "and p/P (paste) only"
+    )
 
 
 def _apply(buf: Buffer, cmd: str) -> tuple[str, int, int]:
@@ -157,6 +314,20 @@ def _apply(buf: Buffer, cmd: str) -> tuple[str, int, int]:
             )
         if op == "d" and text and text.strip():
             raise EditError(f"d{scope}{obj} takes no TEXT (use c{scope}{obj} to change)")
+        if obj == "p":  # paragraph: the one line-wise text object
+            a, b = _paragraph_span(buf.lines, i, around=scope == "a")
+            if op == "d":
+                del buf.lines[a:b + 1]
+                if not buf.lines:
+                    buf.lines = [""]
+                buf.cursor.line = min(a, len(buf.lines) - 1)
+                buf.cursor.col = 0
+                return f"deleted lines {a + 1}–{b + 1}", buf.cursor.line, buf.cursor.line
+            parts = (text or "").split("\n")
+            buf.lines[a:b + 1] = parts
+            buf.cursor.line, buf.cursor.col = a, 0
+            last = a + len(parts) - 1
+            return f"replaced lines {a + 1}–{b + 1} with {len(parts)} line(s)", a, last
         start, end = find_object(line, col, obj, around=scope == "a")
         return _splice(buf, i, start, end, text or "")
 
@@ -199,8 +370,9 @@ def _apply(buf: Buffer, cmd: str) -> tuple[str, int, int]:
 
     raise EditError(
         f"unknown edit command: {cmd!r} "
-        "(supported: ciw/caw ci(/{{/[/\"/' di/da-variants dd cc D C x r o O A I "
-        "cs<old><new> ds<char> ysiw<char>)"
+        "(supported: ciw/caw ci(/{{/[/\"/' di/da-variants cip/dap dd cc D C x r "
+        "o O A I cs<old><new> ds<char> ysiw<char> yy y<i|a><obj> p P "
+        "\"name-prefix for registers)"
     )
 
 
@@ -281,6 +453,40 @@ def _word_span(line: str, col: int, around: bool) -> tuple[int, int]:
             while start > 0 and line[start - 1] == " ":
                 start -= 1
     return start, end
+
+
+def _paragraph_span(lines: list[str], i: int, around: bool) -> tuple[int, int]:
+    """Blank-line-delimited paragraph as 0-based inclusive line span (vim
+    semantics: `ap` takes trailing blanks, or leading ones if none trail;
+    on a blank line, the blank run — plus the next paragraph for `ap`)."""
+    def blank(k: int) -> bool:
+        return not lines[k].strip()
+
+    n = len(lines)
+    a = b = i
+    if blank(i):
+        while a > 0 and blank(a - 1):
+            a -= 1
+        while b + 1 < n and blank(b + 1):
+            b += 1
+        if around:
+            while b + 1 < n and not blank(b + 1):
+                b += 1
+        return a, b
+    while a > 0 and not blank(a - 1):
+        a -= 1
+    while b + 1 < n and not blank(b + 1):
+        b += 1
+    if around:
+        e = b
+        while e + 1 < n and blank(e + 1):
+            e += 1
+        if e > b:
+            b = e
+        else:
+            while a > 0 and blank(a - 1):
+                a -= 1
+    return a, b
 
 
 def _bracket_span(line: str, col: int, oc: str, cc_: str) -> tuple[int, int]:

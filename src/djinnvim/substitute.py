@@ -11,16 +11,16 @@ Supported forms (leading `:` optional):
                              after the start line
   :g/DEBUG/d                 delete every matching line
 
-Registers (visible state: every yank/cut echoes name + content; the model
-never reproduces the text — put pastes the authoritative copy):
+Ex-range register fallback (the normal-mode surface in edit.py — yy,
+"name yap, "name dd, p/P — is primary; these ranges cover pattern-bounded
+blocks that text objects can't select, e.g. a Python function with internal
+blank lines; paste back with p/P in edit):
 
   :RANGE y NAME              yank range into register NAME
   :RANGE d NAME              cut: delete range into register NAME
   :RANGE d                   plain delete — never touches a register, so a
                              cleanup mid-move can't clobber the block carried
   :y                         bare yank: cursor line into the unnamed register
-  :put NAME  /  :put         insert register contents below the cursor line
-                             (no range; position with motion first)
 
 Flags: g (all occurrences per line), i (ignore case).
 Replacement uses Python re syntax (\\1 for groups, not vim's \\r).
@@ -32,12 +32,10 @@ Failures raise SubstituteError loudly; the buffer and cursor are untouched.
 import re
 
 from .buffer import Buffer
-from .viewport import render
+from .registers import Register, display, preview
 
 DIFF_CAP = 60   # beyond this many changed lines, elide the middle
 DIFF_EDGE = 5   # lines shown at each end when capped
-PREVIEW_EDGE = 3      # register previews: lines shown at each end when elided
-PREVIEW_LINE_CAP = 120  # register previews: max chars per line
 
 
 class SubstituteError(Exception):
@@ -48,11 +46,11 @@ _PATTERN = r"((?:\\.|[^/])*)"
 _GLOBAL_DELETE = re.compile(rf"^g/{_PATTERN}/d$")
 _SUBST = re.compile(rf"^s/{_PATTERN}/{_PATTERN}/([gi]*)$")
 _ADDR = re.compile(rf"^(\d+|\$|\.|/{_PATTERN}/)")
-_REGISTER_OP = re.compile(r"^(y|d|put)(?:\s+(\w+))?$")
+_REGISTER_OP = re.compile(r"^(y|d)(?:\s+(\w+))?$")
 
 
 def execute(
-    buf: Buffer, command: str, registers: dict[str, list[str]] | None = None
+    buf: Buffer, command: str, registers: dict[str, Register] | None = None
 ) -> str:
     """Apply one ex command; return the report (count + compact diff)."""
     cmd = command.strip()
@@ -77,12 +75,6 @@ def execute(
         op, name = m.groups()
         if registers is None:
             registers = {}
-        if op == "put":
-            if range_part:
-                raise SubstituteError(
-                    "put takes no range — position the cursor with motion first"
-                )
-            return _put(buf, name, registers)
         start, end = _resolve_range(buf, range_part)
         if op == "y":
             return _yank(buf, start, end, name, registers)
@@ -91,7 +83,7 @@ def execute(
     raise SubstituteError(
         f"cannot parse {command!r} "
         "(supported: :%s/old/new/g  :N,Ms/old/new/  :/pat/,/pat/s/old/new/  "
-        ":g/pat/d  :N,My NAME  :N,Md NAME  :N,Md  :put NAME)"
+        ":g/pat/d  :N,My NAME  :N,Md NAME  :N,Md — paste with p/P in edit)"
     )
 
 
@@ -217,27 +209,23 @@ def _global_delete(buf: Buffer, pattern: str) -> str:
     return head + "\n" + _diff(doomed)
 
 
-def _display(name: str | None) -> str:
-    return f'register "{name}"' if name else "the unnamed register"
-
-
 def _yank(
     buf: Buffer, start: int, end: int, name: str | None,
-    registers: dict[str, list[str]],
+    registers: dict[str, Register],
 ) -> str:
     lines = list(buf.lines[start:end + 1])
-    registers[name or ""] = lines
-    head = f"yanked {len(lines)} line(s) ({start + 1}–{end + 1}) into {_display(name)}"
-    return head + "\n" + _preview(lines)
+    registers[name or ""] = Register(lines, linewise=True)
+    head = f"yanked {len(lines)} line(s) ({start + 1}–{end + 1}) into {display(name)}"
+    return head + "\n" + preview(lines)
 
 
 def _range_delete(
     buf: Buffer, start: int, end: int, name: str | None,
-    registers: dict[str, list[str]],
+    registers: dict[str, Register],
 ) -> str:
     lines = list(buf.lines[start:end + 1])
     if name is not None:
-        registers[name] = lines
+        registers[name] = Register(lines, linewise=True)
     buf.lines = buf.lines[:start] + buf.lines[end + 1:]
     if not buf.lines:
         buf.lines = [""]
@@ -247,60 +235,10 @@ def _range_delete(
 
     span = f"{len(lines)} line(s) ({start + 1}–{end + 1})"
     if name is not None:
-        head = f"cut {span} into {_display(name)}"
+        head = f"cut {span} into {display(name)}"
     else:
         head = f"deleted {span} — not saved to a register"
-    return head + "\n" + _preview(lines)
-
-
-def _put(buf: Buffer, name: str | None, registers: dict[str, list[str]]) -> str:
-    key = name or ""
-    if key not in registers:
-        raise SubstituteError(_missing_register(name, registers))
-    lines = registers[key]
-    at = buf.cursor.line
-    buf.lines[at + 1:at + 1] = list(lines)
-    first, last = at + 1, at + len(lines)
-    buf.cursor.line = last
-    buf.cursor.col = 0
-    buf.dirty = True
-
-    head = f"put {len(lines)} line(s) from {_display(name)} below line {at + 1}"
-    return head + "\n" + render(buf, first=first, last=last)
-
-
-def _missing_register(name: str | None, registers: dict[str, list[str]]) -> str:
-    what = (
-        f'no register "{name}"' if name
-        else "unnamed register is empty (nothing yanked yet)"
-    )
-    if not registers:
-        return (
-            what + " — no registers set; yank with :N,My NAME "
-            "or cut with :N,Md NAME"
-        )
-    out = [what + " — available registers:"]
-    for key, lines in registers.items():
-        label = f'"{key}"' if key else "(unnamed)"
-        tail = "" if len(lines) == 1 else f" ... ({len(lines)} lines)"
-        out.append(f"  {label}: {_clip(lines[0])}{tail}")
-    return "\n".join(out)
-
-
-def _clip(line: str) -> str:
-    return line if len(line) <= PREVIEW_LINE_CAP else line[:PREVIEW_LINE_CAP] + "…"
-
-
-def _preview(lines: list[str]) -> str:
-    """Stripped register-content echo: short blocks in full, long ones
-    first/last PREVIEW_EDGE with an elision marker."""
-    if len(lines) <= 2 * PREVIEW_EDGE + 1:
-        shown = [f"  {_clip(l)}" for l in lines]
-    else:
-        shown = [f"  {_clip(l)}" for l in lines[:PREVIEW_EDGE]]
-        shown.append(f"  ... {len(lines) - 2 * PREVIEW_EDGE} more line(s) ...")
-        shown.extend(f"  {_clip(l)}" for l in lines[-PREVIEW_EDGE:])
-    return "\n".join(shown)
+    return head + "\n" + preview(lines)
 
 
 def _diff(changed: list[tuple[int, str, str | None]]) -> str:

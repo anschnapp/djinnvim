@@ -1,6 +1,8 @@
-"""MCP wiring for the v0.1 tool surface: open, motion, edit, substitute,
+"""MCP wiring for the tool surface: open, motion, edit, substitute,
 matches, write. Thin wrapper — all logic lives in session.Session; this module
-owns only the MCP registration and the tool descriptions."""
+owns only the MCP registration and the tool descriptions. Descriptions are
+written to carry a cold agent alone (few-shot examples, deviations from vim
+stated explicitly)."""
 
 import os
 from pathlib import Path
@@ -33,8 +35,12 @@ def motion(command: str) -> str:
     /pattern (regex search forward), ?pattern (backward), n/N (next/previous
     match), :N (go to line N), gg/G (first/last line), f<char>/F<char>
     (next/previous occurrence of char on the cursor line — sub-line hops).
-    Searches wrap and report `match i of n`. Returns the viewport where you
-    landed. Regex is Python re syntax, not PCRE.
+    Returns the viewport where you landed. Regex is Python re syntax, not
+    PCRE. Vim search semantics: a match at the cursor itself is skipped
+    (strictly after), search wraps and reports `(wrapped)`, and the result
+    says `match i of n` so you see how many other sites exist. Deviation
+    from vim: n is ALWAYS forward and N ALWAYS backward, regardless of
+    whether the last search was / or ?.
 
     Examples:
       motion("/def parse")   -> match 2 of 5, cursor on that line
@@ -49,22 +55,41 @@ def motion(command: str) -> str:
 def edit(command: str) -> str:
     """Edit the active buffer at the cursor, or anchored in the same call:
     `at /pattern/ <cmd>` (optional ordinal: `at 2nd /pattern/ <cmd>`).
-    Anchored summaries report `(match i of n)` — if n > 1 and you didn't
-    pick an ordinal, check you hit the right site.
+    The anchor puts the cursor at the START of the match, so anchor on the
+    exact text you want changed, not near it: to change the 15 in
+    `retries(15)` use `at /15\\)/ ciw 60` — `at /retries=15/ ciw 60` would
+    change `retries`. <cmd> must be an edit command from the list below,
+    never a motion. Anchored summaries report `(match i of n)` — if n > 1
+    and you didn't pick an ordinal, check you hit the right site.
+
     Commands: ciw/caw TEXT, ci(/ci{/ci[/ci"/ci' TEXT (+ di/da to delete),
+    cip/cap TEXT + dip/dap (paragraph = blank-line-delimited block),
     dd, cc TEXT, D, C TEXT, x, r<char>, o/O TEXT (insert line below/above,
     TEXT may be multi-line), A/I TEXT (append/insert on line),
     cs<old><new> (change surround, e.g. cs"' turns "x" into 'x'),
     ds<char> (delete surround), ysiw<char> (surround word under cursor).
+    Change commands need TEXT, delete commands take none. Everything after
+    the first space is TEXT, verbatim — indentation survives.
+
+    Registers (move text without retyping it): yy / y<i|a><object> yanks,
+    p/P pastes below/above the cursor line (charwise yanks like yiw paste
+    within the line). Prefix "name targets a named register and works with
+    the anchor: `at /def helper/ "fn dap` cuts the whole function into
+    register "fn"; navigate with motion, then `"fn p`. Only "name-prefixed
+    deletes touch registers — plain dd/dap can't clobber what you carry.
+    Yanks and cuts echo the register content; a wrong name on p fails
+    loudly and lists every register.
+
     Returns a one-line summary + the post-edit viewport. Failed commands
     never modify the buffer.
 
     Examples:
       edit("at /old_name/ ciw new_name")   -> rename the word at the match
-      edit("at /timeout=30/ ci( timeout=60")
+      edit("at /30\\)/ ciw 60")             -> change the value, anchored on it
       edit("at /'hello'/ cs'\\"")           -> 'hello' becomes "hello"
       edit("o import sys")                 -> new line below the cursor
-      edit("dd")                           -> delete the cursor line
+      edit("at /def helper/ \\"fn dap")     -> cut function into register fn
+      edit("\\"fn p")                       -> paste it below the cursor
     """
     return session.edit(command)
 
@@ -77,23 +102,24 @@ def substitute(command: str) -> str:
     `:s/old/new/` (cursor line), `:10,40s/foo/bar/` (line range),
     `:/start pat/,/end pat/s/x/y/g` (pattern range), `:g/pat/d` (delete
     matching lines). Flags: g (all per line), i (ignore case). Regex and
-    replacement are Python re syntax (\\1 for groups). Returns the
-    substitution count + a compact diff of changed lines. Zero matches is a
-    loud error; the buffer is untouched.
+    replacement are Python re syntax (\\1 for groups). In a pattern range
+    the second address is searched forward FROM the first — "from A to the
+    next B". Returns the substitution count + a compact diff of changed
+    lines. Zero matches is a loud error; the buffer is untouched.
 
-    Registers — move text without retyping it: `:RANGE y NAME` yanks the
-    range into register NAME, `:RANGE d NAME` cuts it, then position the
-    cursor with motion and `:put NAME` inserts it below the cursor line
-    (works across files). Ranges as above (`:10,20y block`,
-    `:/def helper/,/^$/d block`). Bare `:RANGE d` is a plain delete and
-    never touches a register; bare `:y`/`:put` use the unnamed register.
-    Yank/cut echo the stored content; you never retype it.
+    Register ranges — when a block is bounded by patterns rather than a
+    text object (e.g. a Python function with internal blank lines, where
+    dap under-grabs): `:RANGE y NAME` yanks the range into register NAME,
+    `:RANGE d NAME` cuts it (`:10,20y block`, `:/def helper/,/^def /d fn`).
+    Paste with p/P in the edit tool (works across files). Bare `:RANGE d`
+    is a plain delete and never touches a register. Yank/cut echo the
+    stored content; you never retype it.
 
     Examples:
       substitute(":%s/parse_config/load_config/g")
       substitute(":g/print\\(.*DEBUG/d")
       substitute(":/def render/,/^$/s/ctx/context/g")
-      substitute(":/def helper/,/^$/d block")  then  substitute(":put block")
+      substitute(":/def helper/,/^def /d fn")  then  edit("\\"fn p")
     """
     return session.substitute(command)
 

@@ -68,6 +68,20 @@ features pulled forward from dogfood #1 — anchored-edit ambiguity counts,
 `:RANGE d NAME` (cut), `:put NAME`, wrong-name recovery — see "Registers:
 cut / yank / put".
 
+**v0.3 is implemented and green (2026-07-11):** the register surface
+revision (see "Registers: yank / cut / paste") — normal-mode `yy` /
+`y{i,a}{object}` / `p` / `P` with the `"name` prefix in `edit`, paragraph
+text object `ip`/`ap` (for c/d/y), linewise vs charwise register kinds,
+`:put` removed, shared machinery extracted to `registers.py` — plus the
+cold-agent tool description pass (anchor-lands-at-match-START warning +
+anchor-on-the-value idiom, anchored-form-takes-edit-commands-only,
+TEXT-verbatim and change-needs-TEXT/delete-forbids-it conventions,
+n-always-forward/N-always-backward deviation, pattern-range
+second-address semantics, register discoverability in both edit and
+substitute descriptions). 151 tests; e2e script updated to the
+normal-mode move (anchored `"block dap` cut → wrong-name `p` recovery →
+cross-file paste).
+
 ```
 src/djinnvim/
   buffer.py      ✅ Buffer/Cursor dataclasses, open/write, disk-staleness check,
@@ -79,19 +93,27 @@ src/djinnvim/
                     cursor-line-local; find_matches shared with edit's anchor
   edit.py        ✅ anchored `at [Nth] /pattern/ <cmd>`, summaries append
                     `(match i of n)` (file-order index); ciw/caw, ci/ca+di/da
-                    for ( { [ " ' `, diw/daw, dd, cc, D, C, x, r, o/O
-                    (multi-line), A/I; cs/ds/ysiw with vim-surround nuances
-                    (open-bracket replacement pads inner spaces, open-bracket
-                    target trims them; close bracket = no padding);
-                    single-line find_object (brackets: enclosing-pair scan,
-                    quotes: pair-up scan with backslash escapes)
+                    for ( { [ " ' `, diw/daw, cip/cap+dip/dap (paragraph,
+                    line-wise), dd, cc, D, C, x, r, o/O (multi-line), A/I;
+                    cs/ds/ysiw with vim-surround nuances (open-bracket
+                    replacement pads inner spaces, open-bracket target trims
+                    them; close bracket = no padding); single-line find_object
+                    (brackets: enclosing-pair scan, quotes: pair-up scan with
+                    backslash escapes); v0.3 registers: yy/y{i,a}{obj} yanks
+                    (no dirty, no viewport — echo carries content), p/P paste
+                    (linewise below/above, charwise within line), `"name`
+                    prefix (word names take a space, `"ayy` vim-style works),
+                    prefix composes with the anchor in either order
+  registers.py   ✅ Register dataclass (lines + linewise kind), shared
+                    preview/clip/display/missing-register helpers for both
+                    surfaces
   substitute.py  ✅ :%s///, :s/// (cursor line), :N,M / $ / . / /pat/,/pat/
                     ranges, flags g i, :g/pat/d; output = count + compact
                     ±diff of changed lines (pre-edit line numbers), capped at
                     60 with first/last-5 elision; zero matches is a loud error;
-                    v0.2 registers: :RANGE y/d NAME, plain :RANGE d (no
-                    register), :put NAME with viewport echo, stripped content
-                    previews, wrong-name error lists all registers
+                    ex-range register fallback: :RANGE y/d NAME, plain
+                    :RANGE d (no register); :put removed in v0.3 (paste
+                    with p/P in edit)
   session.py     ✅ interface-neutral Session facade (2026-07-10): buffer
                     registry + active buffer + the six operations as
                     string-in/string-out methods; root path sandboxing;
@@ -99,16 +121,17 @@ src/djinnvim/
   server.py      ✅ thin MCP wrapper: FastMCP registration + tool
                     descriptions with few-shot examples; DJINNVIM_ROOT env
                     var sets the sandbox root
-tests/           ✅ 131 tests (motion, edit, substitute, registers, server
+tests/           ✅ 151 tests (motion, edit, substitute, registers, server
                     round-trips, viewport format)
 ```
 
 Verified end-to-end over the MCP stdio protocol (scripted client running the
 example session below: open → motion → anchored edits → matches → write; a
 second v0.1 script covering f/F → cs → anchored ciw → :%s//g → :g//d → write;
-a third v0.2 script covering a cross-file function move — pattern-range cut →
-wrong-name `:put` recovery → `G` → put → write, exact target diffs — kept in
-the repo at `e2e/e2e_registers.py`; run with `.venv/bin/python`, not pytest).
+a third script covering a cross-file function move — updated for v0.3 to
+anchored `"block dap` cut → wrong-name `p` recovery → `G` → `"block p` →
+write, exact target diffs — kept in the repo at `e2e/e2e_registers.py`; run
+with `.venv/bin/python`, not pytest).
 
 Conventions decided during implementation (in addition to the earlier ones —
 0-based cursor internally / 1-based in output; failed commands never touch
@@ -231,17 +254,60 @@ Next session (in rough priority order):
 
 1. ~~**Implement v0.1 features**~~ ✅ done same evening (see v0.1 status
    above); validated live in dogfood #2 (2026-07-10).
-2. **Cold-agent tool description pass** — descriptions must carry a cold
-   Opus agent alone. Known must-fixes: `edit` must warn that anchors land at
-   match START (anchor on the value you want changed, e.g. `at /15\)/ ciw 60`,
-   not `at /timeout=15/`) and that the anchored form takes edit commands
-   only, not motions — both hit twice now (v0.1 e2e + dogfood #2).
-3. **Dogfood #3 with a move-a-block task** — validates the v0.2 registers
-   live (built 2026-07-10, evidence gate waived by decision; see "Registers:
-   cut / yank / put").
+2. ~~**Cold-agent tool description pass**~~ ✅ done 2026-07-11 as part of
+   v0.3 (see v0.3 status above): anchor-at-match-START warning +
+   anchor-on-the-value idiom and examples, anchored-form-takes-edit-commands-
+   only, TEXT conventions, n/N deviation, pattern-range semantics, register
+   discoverability. Cold-Opus validation still pending — that's what the
+   benchmark measures.
+3. **Dogfood #3 with a move-a-block task** — validates the v0.3 register
+   surface live (normal-mode y/d/p built 2026-07-11; see "Registers:
+   yank / cut / paste").
 4. **Design + build the benchmark** (decided 2026-07-10: next session) —
    see "Benchmark rethink" under Evaluation Plan; add model (Opus vs Fable,
    cold) as a swept dimension alongside file size.
+
+## Registers: yank / cut / paste (revised 2026-07-10, later)
+
+**Surface revision (decided in conversation 2026-07-10, after v0.2):** the
+primary register surface is **normal-mode**, not ex. Rationale: `y`/`d`/`p`
+compose for free with the existing text-object machinery and the anchored
+form (`at /def helper/ yap` is a one-call "yank this function"), it is the
+vim surface the user (and presumably the weights) actually speak, and it
+slims `substitute` back to a near-pure ex surface — dissolving the
+`substitute`→`ex` rename question from dogfood #2.
+
+- **Normal-mode ops in `edit`:** `yy`, `y{i,a}{object}` (all existing
+  objects + new paragraph object), `p`/`P` (paste below/above for linewise,
+  after/at cursor for charwise). Register targeting via vim's quote prefix:
+  `"name yap`, `"name dd` (cut), `"name p` — word names take a space after
+  the register (`"block yy`), vim's no-space form works for single letters
+  (`"ayy`). Same mild semantic extension (word-named registers) as before.
+- **Registers have kinds (vim semantics):** `yy`/`yap`/`dd`/ex-range ops are
+  linewise (paste inserts whole lines below/above cursor); `yiw`/`yi(`/… are
+  charwise (paste inserts after/at the cursor column).
+- **Paragraph text object `ip`/`ap` pulled off the deferred list** — `yap`/
+  `dap` need it; blank-line-delimited, vim semantics (`ap` takes trailing
+  blanks).
+- **Ex-range `:RANGE y/d NAME` stays as fallback** for arbitrary
+  pattern-bounded blocks — the case text objects can't select: a Python
+  function with internal blank lines is *not* one paragraph, so `yap` under-
+  grabs; `:/def helper/,/^def /d name` is the reliable form there.
+  Redundancy accepted deliberately: vim itself has both surfaces, and the
+  whole bet is that models already speak vim.
+- **`:put` removed** — pure redundancy with `p`/`P`, and the weaker idiom.
+- **Anti-clobber rule unchanged:** only an explicit register name writes a
+  register (`"name dd` cuts, bare `dd`/`dap`/`:RANGE d` are plain deletes);
+  bare `y…` writes the unnamed register (a yank has no other purpose); bare
+  `p` reads it. `c` commands never touch registers (vim would; invisible
+  side-channel, rejected).
+- **Echoes:** yanks echo name + stripped content preview and do not dirty
+  the buffer; register cuts echo the content leaving (preview, like ex
+  cuts); `p`/`P` echo the standard post-edit viewport; wrong-name paste
+  fails loudly listing all registers with previews (unchanged).
+
+The original ex-only design below is kept for the record; its `:put` is
+gone and its `:RANGE y/d NAME` forms remain as the fallback described above.
 
 ## Registers: cut / yank / put (designed & built 2026-07-10)
 
@@ -353,6 +419,9 @@ Supported commands (count-free normal-mode subset):
 | `J` | Join line with next |
 | `>>` / `<<` | Indent / dedent cursor line |
 | `.` | Repeat last edit at current cursor position |
+| `yy`, `yiw`, `yap`, ... | Yank line / text object into a register (buffer untouched) |
+| `p` / `P` | Paste register: below/above cursor line (linewise), after/at cursor (charwise) |
+| `"name <cmd>` | Register prefix for `y`/`d`/`p`/`P`: `"block yap`, `"block dd` (cut), `"block p`. Word names take a space; single letters also work vim-style (`"ayy`). Bare `y`→unnamed register; bare deletes never touch registers. |
 
 Text object set: `w`, `W`, `p` (paragraph), `(`/`)`, `{`/`}`, `[`/`]`, `"`, `'`, `` ` ``, `t` (HTML/XML tag), with `i` (inner) and `a` (around) variants.
 
@@ -364,6 +433,7 @@ Ex-style substitution for repetitive, file-wide, or ranged changes — the cases
 
 - **Input:** `command` in ex syntax: `:%s/old/new/g`, `:10,40s/foo/bar/`, `:g/DEBUG/d`, `:/def parse/,/^$/s/x/y/g`
 - **Output:** number of substitutions + a compact diff of changed lines (unified-diff style, changed lines only, capped — see Limits). This is the fresh "anchor" restatement of file content the agent can attend to.
+- Also carries the ex-range register fallback: `:RANGE y NAME` / `:RANGE d NAME` for pattern-bounded blocks that text objects can't select (paste back with `p` in `edit`).
 
 ### `matches`
 Global search visibility without content. The antidote to keyhole blindness.

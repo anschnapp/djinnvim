@@ -14,6 +14,7 @@ from . import edit as edit_mod
 from . import motion as motion_mod
 from . import substitute as substitute_mod
 from .buffer import Buffer
+from .registers import Register
 from .viewport import render
 
 _LANGUAGES = {
@@ -33,9 +34,9 @@ class Session:
         self.root = (root or Path.cwd()).resolve()
         self.buffers: dict[Path, Buffer] = {}
         self.active: Buffer | None = None
-        # Session-wide (not per-buffer), so cut in one file / put in another
-        # works. Key "" is the unnamed register.
-        self.registers: dict[str, list[str]] = {}
+        # Session-wide (not per-buffer), so cut in one file / paste in
+        # another works. Key "" is the unnamed register.
+        self.registers: dict[str, Register] = {}
 
     def _check_fresh(self, buf: Buffer) -> None:
         try:
@@ -94,9 +95,11 @@ class Session:
             return "error: no active buffer — call open(path) first"
         try:
             self._check_fresh(buf)
-            summary, first, last = edit_mod.execute(buf, command)
+            summary, first, last = edit_mod.execute(buf, command, self.registers)
         except edit_mod.EditError as e:
             return f"error: {e}"
+        if first is None:  # yank / register cut: the echo carries the content
+            return summary
         return summary + "\n" + render(buf, first=first, last=last)
 
     def substitute(self, command: str) -> str:
