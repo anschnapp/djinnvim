@@ -20,6 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from gen import TASKS, generate
+from report import ABORT_MARKERS, is_aborted, iter_records
 
 REPO = Path(__file__).resolve().parent.parent
 DJINNVIM_BIN = REPO / ".venv" / "bin" / "djinnvim"
@@ -123,18 +124,20 @@ def run_trial(task: str, size: int, model: str, condition: str, trial: int,
         "exit_code": proc.returncode,
         "stderr": proc.stderr[-500:] if proc.returncode != 0 else "",
     }
+    record["aborted"] = is_aborted(record)
     return record
 
 
 def done_keys(results: Path) -> set[tuple]:
     keys = set()
     if results.exists():
-        for line in results.read_text().splitlines():
+        for r in iter_records(results):
+            if is_aborted(r):
+                continue  # rerun aborted trials on resume
             try:
-                r = json.loads(line)
                 keys.add((r["task"], r["size"], r["model"], r["condition"],
                           r["trial"]))
-            except (json.JSONDecodeError, KeyError):
+            except KeyError:
                 continue
     return keys
 
@@ -173,12 +176,24 @@ def main() -> None:
             rec = run_trial(t, s, m, c, i, args.budget, args.workdirs)
         except subprocess.TimeoutExpired:
             rec = {"task": t, "size": s, "model": m, "condition": c,
-                   "trial": i, "exact_match": False, "subtype": "timeout"}
+                   "trial": i, "exact_match": False, "subtype": "timeout",
+                   "aborted": True}
         with args.results.open("a") as fh:
             fh.write(json.dumps(rec) + "\n")
-        print(f"{'OK' if rec.get('exact_match') else 'MISMATCH'} "
-              f"cost=${rec.get('cost_usd') or 0:.2f} "
+        if rec.get("aborted"):
+            status = "ABORTED"
+        elif rec.get("exact_match"):
+            status = "OK"
+        else:
+            status = "MISMATCH"
+        print(f"{status} cost=${rec.get('cost_usd') or 0:.2f} "
               f"calls={rec.get('tool_calls')}")
+        result_text = (rec.get("agent_result") or "").lower()
+        if any(m_ in result_text for m_ in ABORT_MARKERS):
+            print("session/usage limit hit — stopping the run "
+                  "(this trial is recorded as aborted and will rerun "
+                  "on resume)")
+            return
 
 
 if __name__ == "__main__":

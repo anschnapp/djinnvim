@@ -118,9 +118,16 @@ headless Claude Code defers MCP tool schemas behind ToolSearch, so keyhole
 pays ~2 extra calls per run to fetch them (baseline's native tools are
 never deferred) — logged per-tool, so it can be subtracted analytically.
 197 tests total. **The full sweep has not been run** — it spends real API
-budget and is the user's call (5 tasks × 4 sizes × 2 models × 2 conditions
-× 5 trials = 400 trials at defaults; start with a subset, e.g.
+budget and is the user's call (start with a subset, e.g.
 `--tasks rename --sizes 100,2000 --trials 2`).
+
+**Round 2 tasks built (2026-07-11, later):** first opus cells (rename,
+100/2000, 2 trials) showed the baseline solving rename via grep+sed in 2-3
+Bash calls without reading the file — one-regex tasks don't discriminate
+(see "Round 2 tasks" under Evaluation Plan for the analysis and the six
+new tasks: rename-trap, bump-trap, delete-trap, quote-trap, composite,
+move-multi). 221 tests total; all 11 tasks validated to parse at every
+size including 10000 lines.
 
 ```
 src/djinnvim/
@@ -736,6 +743,30 @@ Open questions from the rethink, settled in conversation:
   Sizes swept: ~100 / ~500 / ~2000 / ~10000 lines; task difficulty scales
   naturally (more call sites / debug lines in bigger files).
 - **Models swept:** `opus` (intended workhorse) and `fable`, both cold.
+  `haiku` worth adding: Opus is sed-fluent, so keyhole's edge may be
+  largest where a cheaper model would fumble shell quoting.
+- **Round 2 tasks (decided 2026-07-11, after the first opus cells):** the
+  first four tasks are all one-regex tasks — the opus baseline solved
+  rename@2000 in 2 Bash calls (grep+sed, file never read), so tokens stay
+  flat with size and the cost gap is noise. grep -B2 is a viewport and sed
+  is an anchored edit; scenarios must break one of those to discriminate:
+  1. **Trap variants** (`rename-trap`, `bump-trap`, `delete-trap`,
+     `quote-trap`): same generators plus decoys, but *natural* prompts
+     with no decoy warnings (the originals hand-hold: "do NOT touch
+     fetch_records_cached"). Correct interpretation stays unambiguous;
+     naive sed silently corrupts (missing \b, explicit timeout=30 at call
+     sites vs the default, log_debug_summary collision, apostrophes in
+     comments). Headline metric becomes silent-error rate, where echo
+     discipline is the product bet.
+  2. **`composite`**: one dogfood-shaped task = 6 heterogeneous small
+     edits (rename w/ decoy, bump default w/ explicit-arg decoys, delete
+     debug lines, constant value change, insert constant, add `logger`
+     2nd arg at every send_request call site — some call sites
+     multi-line, which breaks line-based sed). The most representative
+     task of real usage.
+  3. **`move-multi`**: gather three scattered check_* functions directly
+     above run_checks in a stated order — no regex answer, registers'
+     home turf, scales with file size.
 - **Metrics per trial:** exact-match bool, tokens by kind, cost USD, tool
   calls (total + per tool), turns, wall clock, and claimed-success vs
   actual-diff for the silent-error rate. Results appended to a JSONL;

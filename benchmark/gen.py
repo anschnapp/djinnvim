@@ -264,12 +264,269 @@ def gen_move_func(rng: random.Random, size: int) -> Doc:
     return Doc(FILENAME, start, target, prompt)
 
 
+# --- round 2: trap variants -------------------------------------------------
+# Same decoys (or sharper ones), but natural prompts with no decoy warnings:
+# the correct interpretation is still unambiguous, a naive regex silently
+# corrupts. The metric these target is silent-error rate, not tokens.
+
+def gen_rename_trap(rng: random.Random, size: int) -> Doc:
+    doc = gen_rename(rng, size)
+    prompt = (
+        f"In {FILENAME}, rename the function fetch_records to load_records — "
+        "its definition and all its call sites."
+    )
+    return Doc(FILENAME, doc.start, doc.target, prompt)
+
+
+def gen_bump_trap(rng: random.Random, size: int) -> Doc:
+    core = [
+        ["POLL_INTERVAL = 30"],
+        [
+            "def send_request(url, timeout=30, retries=3):",
+            "    for attempt in range(retries):",
+            "        response = _http_get(url, timeout)",
+            "        if response is not None:",
+            "            return response",
+            "        time.sleep(1)",
+            "    return None",
+        ],
+    ]
+    used: set[str] = set()
+    scattered = []
+    for i in range(_scale(size)):
+        name = _name(rng, used)
+        # explicit timeout=30 at call sites is a deliberate choice by the
+        # caller and must survive a change of the *default*
+        call = ("send_request(url, timeout=30)" if i % 2 == 0
+                else "send_request(url)")
+        scattered.append([
+            f"def {name}(url):",
+            f"    return {call}",
+        ])
+    chunks = _build(rng, size, core, scattered)
+    start = _assemble(chunks)
+    target = start.replace("def send_request(url, timeout=30, retries=3):",
+                           "def send_request(url, timeout=90, retries=3):")
+    prompt = (
+        f"In {FILENAME}, the default timeout of send_request is too low: "
+        "change it from 30 to 90."
+    )
+    return Doc(FILENAME, start, target, prompt)
+
+
+def gen_delete_trap(rng: random.Random, size: int) -> Doc:
+    core = [
+        [
+            "def log_debug(msg):",
+            "    print(f'DEBUG: {msg}')",
+        ],
+        [
+            "def log_debug_summary(stats):",
+            "    return ', '.join(f'{k}={v}' for k, v in stats.items())",
+        ],
+    ]
+    used: set[str] = set()
+    scattered = []
+    for i in range(_scale(size)):
+        name = _name(rng, used)
+        key = rng.choice(KEYS)
+        if i % 3 == 2:
+            scattered.append([
+                f"def {name}(stats):",
+                "    summary = log_debug_summary(stats)",
+                f"    return '{rng.choice(WORDS)}: ' + summary",
+            ])
+        else:
+            scattered.append([
+                f"def {name}(payload):",
+                f"    log_debug('enter {name}')",
+                f"    checked = payload.get('{key}', 0)",
+                f"    return checked + {rng.choice(SAFE_NUMS)}",
+            ])
+    chunks = _build(rng, size, core, scattered)
+    start = _assemble(chunks)
+    target = "\n".join(l for l in start.split("\n")
+                       if "log_debug(" not in l or l.startswith("def "))
+    prompt = (
+        f"Remove all the log_debug calls from {FILENAME} (keep the "
+        "log_debug function definition itself)."
+    )
+    return Doc(FILENAME, start, target, prompt)
+
+
+APOS_COMMENTS = ["    # don't rescale here",
+                 "    # this isn't the hot path",
+                 "    # note: caller's dict is not copied"]
+
+
+def gen_quote_trap(rng: random.Random, size: int) -> Doc:
+    used: set[str] = set()
+    chunks = [_header()]
+    lines = sum(len(c) + 2 for c in chunks)
+    while lines < size:
+        f = _filler(rng, used)
+        if rng.random() < 0.3:
+            f = [f[0], rng.choice(APOS_COMMENTS)] + f[1:]
+        chunks.append(f)
+        lines += len(f) + 2
+    start = _assemble(chunks)
+    target = "\n".join(
+        l if l.lstrip().startswith("#") else re.sub(r"'([^']*)'", r'"\1"', l)
+        for l in start.split("\n"))
+    prompt = (
+        f"In {FILENAME}, convert every single-quoted string literal to "
+        "double quotes."
+    )
+    return Doc(FILENAME, start, target, prompt)
+
+
+# --- round 2: composite (dogfood-shaped) ------------------------------------
+
+def gen_composite(rng: random.Random, size: int) -> Doc:
+    header_s = _header() + ["DEFAULT_REGION = 'eu-west'"]
+    header_t = [l for l in header_s]
+    header_t.insert(header_t.index("MAX_RETRIES = 5") + 1,
+                    "RETRY_BACKOFF = 2.5")
+    header_t[header_t.index("DEFAULT_REGION = 'eu-west'")] = \
+        "DEFAULT_REGION = 'us-east'"
+
+    def ren(chunk: list[str]) -> list[str]:
+        return [re.sub(r"\bfetch_records\b", "load_records", l)
+                for l in chunk]
+
+    pairs: list[tuple[list[str], list[str]]] = []
+    fetch = ["def fetch_records(db, limit):",
+             "    cursor = db.execute('SELECT * FROM records LIMIT ?', (limit,))",
+             "    return cursor.fetchall()"]
+    cached = ["_CACHE = {}", "", "",
+              "def fetch_records_cached(db, limit):",
+              "    if limit not in _CACHE:",
+              "        _CACHE[limit] = fetch_records(db, limit)",
+              "    return _CACHE[limit]"]
+    poll_s = ["def poll_status(job, interval=30):",
+              "    while not job.done():",
+              "        time.sleep(interval)",
+              "    return job.result()"]
+    send_s = ["def send_request(url, timeout=30):",
+              "    return _http_get(url, timeout)"]
+    send_t = ["def send_request(url, logger, timeout=30):",
+              "    return _http_get(url, timeout)"]
+    logdef = ["def log_debug(msg):", "    print(f'DEBUG: {msg}')"]
+    pairs += [(fetch, ren(fetch)), (cached, ren(cached)),
+              (poll_s, [poll_s[0].replace("interval=30", "interval=90")]
+               + poll_s[1:]),
+              (send_s, send_t), (logdef, logdef)]
+
+    used: set[str] = set()
+    n = max(2, size // 150)
+    for i in range(n):  # rename call sites (every 3rd via the decoy)
+        name = _name(rng, used)
+        callee = "fetch_records_cached" if i % 3 == 2 else "fetch_records"
+        c = [f"def {name}(db):",
+             f"    rows = {callee}(db, {rng.choice(SAFE_NUMS)})",
+             "    return [row for row in rows if row]"]
+        pairs.append((c, ren(c)))
+    for _ in range(n):  # debug call sites
+        name = _name(rng, used)
+        key = rng.choice(KEYS)
+        s = [f"def {name}(payload):",
+             f"    log_debug('enter {name}')",
+             f"    checked = payload.get('{key}', 0)",
+             f"    return checked + {rng.choice(SAFE_NUMS)}"]
+        pairs.append((s, [s[0]] + s[2:]))
+    for _ in range(n):  # single-line send_request call sites
+        name = _name(rng, used)
+        s = [f"def {name}(endpoint, logger):",
+             "    return send_request(endpoint)"]
+        pairs.append((s, [s[0], "    return send_request(endpoint, logger)"]))
+    for _ in range(n):  # multi-line send_request call sites (break sed)
+        name = _name(rng, used)
+        s = [f"def {name}(endpoint, logger):",
+             "    response = send_request(",
+             "        endpoint,",
+             f"        timeout={rng.choice(SAFE_NUMS)},",
+             "    )",
+             "    return response"]
+        pairs.append((s, s[:3] + ["        logger,"] + s[3:]))
+
+    lines = len(header_s) + 2 + sum(len(s) + 2 for s, _ in pairs)
+    while lines < size:
+        f = _filler(rng, used)
+        pairs.append((f, f))
+        lines += len(f) + 2
+    rng.shuffle(pairs)
+    start = _assemble([header_s] + [s for s, _ in pairs])
+    target = _assemble([header_t] + [t for _, t in pairs])
+    prompt = (
+        f"Apply these changes to {FILENAME}:\n"
+        "1. Rename the function fetch_records to load_records (its "
+        "definition and all call sites; fetch_records_cached is a separate "
+        "function).\n"
+        "2. Change poll_status's default interval from 30 to 90.\n"
+        "3. Remove all log_debug calls (keep the definition).\n"
+        "4. Change DEFAULT_REGION from 'eu-west' to 'us-east' (keep single "
+        "quotes).\n"
+        "5. Add a constant RETRY_BACKOFF = 2.5 on its own line directly "
+        "below MAX_RETRIES.\n"
+        "6. send_request now takes a logger as its second parameter: update "
+        "its definition, and at every call site pass the logger variable "
+        "(already in scope) as the second argument."
+    )
+    return Doc(FILENAME, start, target, prompt)
+
+
+# --- round 2: multi-move ----------------------------------------------------
+
+def gen_move_multi(rng: random.Random, size: int) -> Doc:
+    def check(name: str, field: str) -> list[str]:
+        return [f"def check_{name}(rows):",
+                "    for row in rows:",
+                f"        if not row.get('{field}'):",
+                "            return False",
+                "    return True"]
+
+    ids, totals, names = check("ids", "id"), check("totals", "total"), \
+        check("names", "name")
+    run = ["def run_checks(rows):",
+           "    return check_ids(rows) and check_totals(rows) "
+           "and check_names(rows)"]
+
+    used: set[str] = set()
+    fillers: list[list[str]] = []
+    lines = len(_header()) + 5 * 3 + len(run) + 10
+    while lines < size:
+        f = _filler(rng, used)
+        fillers.append(f)
+        lines += len(f) + 2
+    k = len(fillers)
+    i, j, m, r = max(1, k // 5), max(2, (2 * k) // 5), max(3, (3 * k) // 5), \
+        max(4, (4 * k) // 5)
+    body = (fillers[:i] + [names] + fillers[i:j] + [ids] + fillers[j:m]
+            + [totals] + fillers[m:r] + [run] + fillers[r:])
+    tbody = fillers[:r] + [ids, totals, names, run] + fillers[r:]
+    start = _assemble([_header()] + body)
+    target = _assemble([_header()] + tbody)
+    prompt = (
+        f"In {FILENAME}, the three check_* functions are scattered through "
+        "the file. Move them so they sit directly above run_checks, in this "
+        "order: check_ids, check_totals, check_names. Keep exactly two "
+        "blank lines between top-level functions and change nothing else."
+    )
+    return Doc(FILENAME, start, target, prompt)
+
+
 TASKS = {
     "rename": gen_rename,
     "delete-debug": gen_delete_debug,
     "bump-default": gen_bump_default,
     "quote-style": gen_quote_style,
     "move-func": gen_move_func,
+    "rename-trap": gen_rename_trap,
+    "bump-trap": gen_bump_trap,
+    "delete-trap": gen_delete_trap,
+    "quote-trap": gen_quote_trap,
+    "composite": gen_composite,
+    "move-multi": gen_move_multi,
 }
 
 

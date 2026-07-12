@@ -10,6 +10,39 @@ from pathlib import Path
 
 RESULTS_DEFAULT = Path(__file__).resolve().parent / "results" / "results.jsonl"
 
+ABORT_MARKERS = ("session limit", "usage limit")
+
+
+def iter_records(path: Path):
+    """Yield result records; tolerant of records glued onto one line and of
+    truncated/corrupt lines (skips to the next line)."""
+    dec = json.JSONDecoder()
+    text = path.read_text()
+    i, n = 0, len(text)
+    while i < n:
+        while i < n and text[i] in " \t\r\n":
+            i += 1
+        if i >= n:
+            break
+        try:
+            obj, i = dec.raw_decode(text, i)
+        except json.JSONDecodeError:
+            nl = text.find("\n", i)
+            i = n if nl == -1 else nl + 1
+            continue
+        yield obj
+
+
+def is_aborted(r: dict) -> bool:
+    """Environment failure (session/usage limit, timeout, crash) rather than
+    an agent outcome — excluded from aggregates, rerun on resume."""
+    if r.get("aborted"):
+        return True
+    if r.get("subtype") != "success":
+        return True
+    result = (r.get("agent_result") or "").lower()
+    return any(m in result for m in ABORT_MARKERS)
+
 
 def mean(xs):
     xs = [x for x in xs if x is not None]
@@ -19,8 +52,11 @@ def mean(xs):
 def main() -> None:
     path = Path(sys.argv[1]) if len(sys.argv) > 1 else RESULTS_DEFAULT
     cells = defaultdict(list)
-    for line in path.read_text().splitlines():
-        r = json.loads(line)
+    aborted = []
+    for r in iter_records(path):
+        if is_aborted(r):
+            aborted.append(r)
+            continue
         cells[(r["task"], r["size"], r["model"], r["condition"])].append(r)
 
     hdr = (f"{'task':<14}{'size':>6} {'model':<7}{'cond':<10}"
@@ -44,12 +80,21 @@ def main() -> None:
 
     # silent errors: wrong result but the run finished "successfully"
     silent = [r for rs in cells.values() for r in rs
-              if not r.get("exact_match") and r.get("subtype") == "success"]
+              if not r.get("exact_match")]
     if silent:
         print(f"\nsilent errors (finished ok, wrong diff): {len(silent)}")
         for r in silent:
             print(f"  {r['task']} size={r['size']} {r['model']} "
                   f"{r['condition']} trial={r['trial']} -> {r.get('workdir')}")
+
+    if aborted:
+        print(f"\naborted trials (excluded from aggregates): {len(aborted)}")
+        for r in aborted:
+            why = r.get("subtype") or "?"
+            hint = (r.get("agent_result") or "")[:60]
+            print(f"  {r.get('task')} size={r.get('size')} {r.get('model')} "
+                  f"{r.get('condition')} trial={r.get('trial')} "
+                  f"[{why}] {hint}")
 
 
 if __name__ == "__main__":

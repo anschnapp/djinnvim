@@ -51,6 +51,73 @@ def test_quote_style_no_singles_left():
     assert "'" not in doc.target
 
 
+def test_rename_trap_decoy_present_prompt_natural():
+    doc = generate("rename-trap", 500, seed=0)
+    assert doc.start.count("fetch_records_cached") >= 2  # decoy in play
+    assert doc.start.count("fetch_records_cached") == \
+        doc.target.count("fetch_records_cached")
+    assert "load_records" in doc.target
+    assert "fetch_records_cached" not in doc.prompt  # no decoy warning
+
+
+def test_bump_trap_call_sites_keep_explicit_timeout():
+    doc = generate("bump-trap", 500, seed=0)
+    explicit = doc.start.count("send_request(url, timeout=30)")
+    assert explicit >= 2
+    assert doc.target.count("send_request(url, timeout=30)") == explicit
+    assert "def send_request(url, timeout=90, retries=3):" in doc.target
+    assert "timeout=30" not in doc.target.split("\n\n\n")[
+        [i for i, c in enumerate(doc.target.split("\n\n\n"))
+         if c.startswith("def send_request")][0]]
+
+
+def test_delete_trap_summary_collision_survives():
+    doc = generate("delete-trap", 500, seed=0)
+    n = doc.start.count("log_debug_summary(")
+    assert n >= 2  # def + at least one call
+    assert doc.target.count("log_debug_summary(") == n
+    assert "def log_debug(msg):" in doc.target
+    assert "    log_debug(" not in doc.target
+
+
+def test_quote_trap_comments_keep_apostrophes():
+    doc = generate("quote-trap", 500, seed=0)
+    start_comments = [l for l in doc.start.splitlines()
+                      if l.lstrip().startswith("#")]
+    assert any("'" in c for c in start_comments)
+    for c in start_comments:
+        assert c in doc.target  # comments byte-identical
+    code = [l for l in doc.target.splitlines()
+            if not l.lstrip().startswith("#")]
+    assert all("'" not in l for l in code)
+
+
+def test_composite_all_six_parts():
+    doc = generate("composite", 500, seed=0)
+    t = doc.target
+    assert "fetch_records" not in t.replace("fetch_records_cached", "")
+    assert "def poll_status(job, interval=90):" in t
+    assert "    log_debug(" not in t and "def log_debug(msg):" in t
+    assert "DEFAULT_REGION = 'us-east'" in t
+    assert "MAX_RETRIES = 5\nRETRY_BACKOFF = 2.5" in t
+    assert "def send_request(url, logger, timeout=30):" in t
+    assert "send_request(endpoint)" not in t
+    assert "send_request(endpoint, logger)" in t
+    # multi-line call sites gained the logger line
+    assert doc.start.count("        endpoint,\n        logger,") == 0
+    assert t.count("        endpoint,\n        logger,") >= 2
+
+
+def test_move_multi_order_and_content():
+    doc = generate("move-multi", 500, seed=0)
+    assert sorted(doc.start.splitlines()) == sorted(doc.target.splitlines())
+    t = doc.target
+    pos = [t.index(f"def check_{n}") for n in ("ids", "totals", "names")]
+    assert pos == sorted(pos) < [t.index("def run_checks")] * 3
+    block = t[t.index("def check_ids"):t.index("def run_checks")]
+    assert block.count("\n\n\n") == 3  # the four defs are contiguous
+
+
 def test_move_func_same_content():
     doc = generate("move-func", 500, seed=0)
     assert sorted(doc.start.splitlines()) == sorted(doc.target.splitlines())
