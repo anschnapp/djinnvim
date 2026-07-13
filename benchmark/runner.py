@@ -26,6 +26,22 @@ REPO = Path(__file__).resolve().parent.parent
 DJINNVIM_BIN = REPO / ".venv" / "bin" / "djinnvim"
 RESULTS_DEFAULT = REPO / "benchmark" / "results" / "results.jsonl"
 
+
+def _repo_version() -> str:
+    """Short git SHA of the djinnvim tree under test, '-dirty' if the working
+    tree has changes — so every result row records which tool version ran."""
+    try:
+        sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=REPO,
+                             capture_output=True, text=True).stdout.strip()
+        dirty = subprocess.run(["git", "status", "--porcelain"], cwd=REPO,
+                               capture_output=True, text=True).stdout.strip()
+        return (sha + "-dirty") if dirty else sha or "unknown"
+    except OSError:
+        return "unknown"
+
+
+REPO_VERSION = _repo_version()
+
 DJINNVIM_TOOLS = ["open", "motion", "edit", "substitute", "matches", "write"]
 
 PREAMBLE_KEYHOLE = (
@@ -105,6 +121,7 @@ def run_trial(task: str, size: int, model: str, condition: str, trial: int,
     record = {
         "task": task, "size": size, "model": model, "condition": condition,
         "trial": trial,
+        "djinnvim_version": REPO_VERSION,
         "exact_match": exact,
         "cost_usd": result_event.get("total_cost_usd"),
         "input_tokens": usage.get("input_tokens"),
@@ -176,7 +193,8 @@ def main() -> None:
             rec = run_trial(t, s, m, c, i, args.budget, args.workdirs)
         except subprocess.TimeoutExpired:
             rec = {"task": t, "size": s, "model": m, "condition": c,
-                   "trial": i, "exact_match": False, "subtype": "timeout",
+                   "trial": i, "djinnvim_version": REPO_VERSION,
+                   "exact_match": False, "subtype": "timeout",
                    "aborted": True}
         with args.results.open("a") as fh:
             fh.write(json.dumps(rec) + "\n")

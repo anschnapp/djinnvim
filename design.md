@@ -129,6 +129,91 @@ new tasks: rename-trap, bump-trap, delete-trap, quote-trap, composite,
 move-multi). 221 tests total; all 11 tasks validated to parse at every
 size including 10000 lines.
 
+**v0.6 is implemented and green (2026-07-13):** fixes driven by the first
+full haiku round-2 run (stopped at the session limit; its results are now
+obsolete — see below):
+
+- **Structured-output bug (headline find, from reading a benchmark
+  transcript):** FastMCP wraps a `str` return as structured content
+  `{"result": ...}`, and headless Claude Code delivered THAT form to the
+  model — every viewport arrived as a single JSON-escaped line (`\n`,
+  `\"`), with no visual alignment and extra escape tokens. Every keyhole
+  benchmark cell to date ran handicapped; keyhole still went 36/36 on the
+  trap tasks (baseline 30/36 — all 6 silent errors were baseline's, so the
+  silent-error story held even hobbled). Fixed:
+  `structured_output=False` on every tool registration.
+- **Composite task failures diagnosed** (keyhole 2/3 @500, 0/3 @2000, all
+  silent): the three 2000-line misses were one identical defect — the
+  inserted `logger,` line landed with 9/10/12 leading spaces instead of 8
+  at every call site (indentation judged inside the escaped one-line blob;
+  re-measure after the rendering fix). The 500-line miss was an escape
+  leak: the model escaped the paren in the REPLACEMENT as in the pattern
+  (`:%s/fetch_records\(/load_records\(/g`) and Python `re` kept the
+  backslash, silently writing `load_records\(` to the file. Fixed:
+  vim/sed-style unescape of backslash-punctuation in replacements
+  (`\(` → `(`; group refs, letter escapes, and `\\` pass through).
+- **`i`/`a` added** (decided in conversation, reversing the v0 omission):
+  the persistent cursor column was never the real obstacle — `x`/`r`/`D`
+  are equally column-dependent; the operative rule is no column
+  *arithmetic*, and anchored `i` ("insert before the match") is fully
+  pattern-defined. `a` is vim-exact — after the cursor char, i.e. after
+  the match's FIRST char — a known footgun, stated in the description.
+- **Tool descriptions cut to roughly half** (decided in conversation):
+  every deviation-from-vim warning kept (anchor-at-START, n/N, Python
+  `re`, TEXT rules, inclusive range addresses); prose and redundant
+  examples dropped. Whether the shorter descriptions still carry a cold
+  agent is folded into what the re-run measures.
+- **Runner stamps `djinnvim_version`** (short git SHA, `-dirty` suffix)
+  into every results row, so mixed-version tables are impossible to
+  produce silently. All pre-v0.6 results moved to
+  `benchmark/results/obsolete-pre-v0.6/` — superseded by the fixes.
+- 235 tests; new e2e-style check verifying over real MCP stdio that
+  results arrive as plain multi-line text (no structuredContent), plus
+  the escape fix and anchored `i` end-to-end.
+- **Full benchmark re-run planned, all on v0.6: haiku → sonnet → opus.**
+  Publish framing decided after opus: silent-error rate is the headline
+  claim, flat cost-vs-size the second; if opus baseline wins outright,
+  the honest writeup is "native tools win at the frontier, keyhole pays
+  off below it."
+
+## Labeled caret (decided 2026-07-14, to build next session)
+
+The `^` column marker is pure whitespace alignment
+(`" " * (2 + width + 2 + col) + "^"`) — but a model can't *see* alignment;
+extracting the column means counting characters, the known weakness. The
+design has always leaned on the caret being confirmation (the cursor got
+there by a pattern the model chose), not measurement. Decision: add a prose
+label to the caret line, compiler-diagnostic style (Rust/Clang
+`^ help: ...` — weight-familiar), converting position-to-count into
+fact-to-read:
+
+```
+→ 12      retries=15)
+          ^ on "r" of "retries"
+```
+
+- **Format:** `^ on "h" of "hello"` on a word char, `^ on ")"` on
+  punctuation, `^ at end of line` past the last column. Factual only, no
+  interpretation.
+- **The label must never lie:** word extraction reuses the same
+  `_word_span` logic `ciw` uses, so `of "hello"` names exactly what `ciw`
+  would change — that consistency is the safety property.
+- **Same trigger as today** (`show_column` only); ~8 extra tokens on
+  column-relevant echoes, nothing on line-wise motions.
+- **Why it earns its place:** the anchor-lands-at-match-START mistake (two
+  live dogfood hits) becomes self-announcing *before* the edit — a model
+  that meant to change the 15 sees `on "r" of "retries"` and re-anchors.
+- Implemented as a third `CURSOR_STYLE` value (`caret-labeled`), default
+  for the benchmark; the cursor-rendering ablation can measure its worth
+  by ablating *down* to the bare caret.
+
+**Next session:** (1) build the labeled caret + tests, verify over MCP
+stdio; (2) start the v0.6+ benchmark re-run — haiku → sonnet → opus, every
+row version-stamped, one SHA for the whole sweep (the labeled caret must
+land BEFORE trial one; no mid-sweep tool changes). Composite and move-multi
+included — composite is the cell that diagnoses whether the rendering fix
+cures the indentation misses.
+
 ```
 src/djinnvim/
   buffer.py      ✅ Buffer/Cursor dataclasses, open/write, disk-staleness check,
@@ -153,7 +238,8 @@ src/djinnvim/
                     prefix (word names take a space, `"ayy` vim-style works),
                     prefix composes with the anchor in either order; v0.4:
                     `u` undo (restored-region viewport, names the undone
-                    command, remaining-step count)
+                    command, remaining-step count); v0.6: i/a inserts
+                    (before/after cursor char, anchored = at the match)
   registers.py   ✅ Register dataclass (lines + linewise kind), shared
                     preview/clip/display/missing-register helpers for both
                     surfaces
@@ -164,16 +250,21 @@ src/djinnvim/
                     ex-range register fallback: :RANGE y/d NAME, plain
                     :RANGE d (no register); :put removed in v0.3 (paste
                     with p/P in edit); v0.5: +N/-N address offsets on
-                    patterns, line numbers, $ and .
+                    patterns, line numbers, $ and .; v0.6: backslash-
+                    punctuation in replacements unescaped vim-style
   session.py     ✅ interface-neutral Session facade (2026-07-10): buffer
                     registry + active buffer + the six operations as
                     string-in/string-out methods; root path sandboxing;
                     staleness check before edit/substitute/write
   server.py      ✅ thin MCP wrapper: FastMCP registration + tool
                     descriptions with few-shot examples; DJINNVIM_ROOT env
-                    var sets the sandbox root
-tests/           ✅ 177 tests (motion, edit, substitute, registers, undo,
-                    address offsets, server round-trips, viewport format)
+                    var sets the sandbox root; v0.6: structured_output=False
+                    on every tool (plain-text results — the structured
+                    {"result": ...} form reached the model JSON-escaped)
+                    + descriptions cut to ~half
+tests/           ✅ 235 tests (motion, edit, substitute, registers, undo,
+                    address offsets, i/a inserts, replacement unescaping,
+                    server round-trips, viewport format, benchmark gen/report)
 ```
 
 Verified end-to-end over the MCP stdio protocol (scripted client running the
@@ -557,6 +648,7 @@ Supported commands (count-free normal-mode subset):
 | `x` / `r{char}` | Delete / replace char under cursor |
 | `o TEXT` / `O TEXT` | Insert new line(s) below / above cursor. TEXT may be multi-line. |
 | `A TEXT` / `I TEXT` | Append to end / insert at start of line |
+| `i TEXT` / `a TEXT` | Insert before / append after the cursor char (v0.6). Anchored, `i` inserts before the match; `a` lands after the match's FIRST char (vim semantics — documented footgun). |
 | `cs{old}{new}` | Change surround (vim-surround), e.g. `cs"'`, `cs({` |
 | `ds{char}` | Delete surround |
 | `ysiw{char}` | Surround word (e.g. `ysiw"`) |

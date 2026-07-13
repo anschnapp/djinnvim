@@ -196,6 +196,45 @@ def test_A_needs_text():
         execute(buf, "A")
 
 
+def test_i_inserts_before_cursor_char():
+    buf = make(["retries(15)"], col=8)  # cursor on the 1
+    execute(buf, "i limit=")
+    assert buf.lines == ["retries(limit=15)"]
+
+
+def test_i_anchored_inserts_before_match():
+    buf = make(["def f(x):", "    call(x)"])
+    execute(buf, "at /x\\)$/ i logger, ")
+    assert buf.lines == ["def f(x):", "    call(logger, x)"]
+
+
+def test_a_appends_after_cursor_char():
+    # vim semantics: after the cursor char — anchored, after the match's FIRST char
+    buf = make(["f(x)"], col=2)  # cursor on x
+    execute(buf, "a , y")
+    assert buf.lines == ["f(x, y)"]
+
+
+def test_a_on_empty_line():
+    buf = make([""], line=0)
+    execute(buf, "a text")
+    assert buf.lines == ["text"]
+
+
+def test_i_and_a_need_text():
+    buf = make(["x"], line=0)
+    with pytest.raises(EditError, match="i needs TEXT"):
+        execute(buf, "i")
+    with pytest.raises(EditError, match="a needs TEXT"):
+        execute(buf, "a")
+
+
+def test_i_text_is_verbatim_after_separator():
+    buf = make(["xy"], col=1)
+    execute(buf, "i   ")  # inserts two spaces (first space is the separator)
+    assert buf.lines == ["x  y"]
+
+
 def test_D_deletes_to_eol():
     buf = make(["keep this DELETE"], col=10)
     execute(buf, "D")

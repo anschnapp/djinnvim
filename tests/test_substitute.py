@@ -173,6 +173,34 @@ def test_unparseable_command_is_loud():
         execute(buf, ":wq")
 
 
+# --- replacement escapes (v0.6): vim/sed-style backslash-punctuation ---
+
+def test_escaped_paren_in_replacement_is_literal_paren():
+    # a model that escapes ( in the pattern will escape it in the replacement
+    # too; Python re would keep the backslash and corrupt the file
+    buf = make(["x = fetch_records(db)"])
+    execute(buf, r":%s/fetch_records\(/load_records\(/")
+    assert buf.lines == ["x = load_records(db)"]
+
+
+def test_escaped_punctuation_variants_unescape():
+    buf = make(["a.b[0]"])
+    execute(buf, r":%s/a\.b\[0\]/c\.d\[1\]/")
+    assert buf.lines == ["c.d[1]"]
+
+
+def test_group_refs_still_work():
+    buf = make(["call(alpha, beta)"])
+    execute(buf, r":%s/call\((\w+), (\w+)\)/call(\2, \1)/")
+    assert buf.lines == ["call(beta, alpha)"]
+
+
+def test_double_backslash_stays_single_literal_backslash():
+    buf = make(["sep = x"])
+    execute(buf, r":%s/x/'\\\\'/")
+    assert buf.lines == [r"sep = '\\'"]
+
+
 # --- address offsets (v0.5) ---
 
 FUNCS = [

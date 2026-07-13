@@ -1,8 +1,10 @@
 """MCP wiring for the tool surface: open, motion, edit, substitute,
 matches, write. Thin wrapper — all logic lives in session.Session; this module
 owns only the MCP registration and the tool descriptions. Descriptions are
-written to carry a cold agent alone (few-shot examples, deviations from vim
-stated explicitly)."""
+written to carry a cold agent alone: compact, but every deviation from vim
+stated explicitly. structured_output=False keeps results as plain multi-line
+text — the structured {"result": ...} wrapping reached the model JSON-escaped,
+destroying viewport alignment (found in benchmark transcripts, 2026-07-13)."""
 
 import os
 from pathlib import Path
@@ -16,145 +18,102 @@ mcp = FastMCP("djinnvim")
 session = Session(Path(os.environ.get("DJINNVIM_ROOT", os.getcwd())))
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def open(path: str) -> str:
-    """Open a file as the active buffer. Returns metadata + a small viewport at
-    line 1, never the full content. Navigate by pattern with `motion`, not by
-    reading.
-
-    Examples:
-      open("src/app.py")
-      open("README.md")
-    """
+    """Open a file as the active buffer (or switch to an already-open one).
+    Returns metadata + a small viewport, never the full content. Navigate by
+    pattern with `motion`, not by reading."""
     return session.open(path)
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def motion(command: str) -> str:
-    """Move the cursor in the active buffer. One motion per call:
-    /pattern (regex search forward), ?pattern (backward), n/N (next/previous
-    match), :N (go to line N), gg/G (first/last line), f<char>/F<char>
-    (next/previous occurrence of char on the cursor line — sub-line hops).
-    Returns the viewport where you landed. Regex is Python re syntax, not
-    PCRE. Vim search semantics: a match at the cursor itself is skipped
-    (strictly after), search wraps and reports `(wrapped)`, and the result
-    says `match i of n` so you see how many other sites exist. Deviation
-    from vim: n is ALWAYS forward and N ALWAYS backward, regardless of
-    whether the last search was / or ?.
+    """Move the cursor in the active buffer. One motion per call: /pattern
+    (regex forward), ?pattern (backward), n/N (next/previous match — n is
+    ALWAYS forward and N ALWAYS backward, unlike vim), :N (line N), gg/G
+    (first/last line), f<char>/F<char> (char on the cursor line). Regex is
+    Python re syntax. A match at the cursor is skipped (strictly after);
+    search wraps, reporting `(wrapped)`; results say `match i of n`.
+    Returns the viewport where you landed.
 
-    Examples:
-      motion("/def parse")   -> match 2 of 5, cursor on that line
-      motion(":80")          -> line 80
-      motion("n")            -> next match of the last search
-      motion("f\\"")          -> cursor to the next " on this line
+    Examples: motion("/def parse")   motion(":80")   motion("n")
     """
     return session.motion(command)
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def edit(command: str) -> str:
-    """Edit the active buffer at the cursor, or anchored in the same call:
-    `at /pattern/ <cmd>` (optional ordinal: `at 2nd /pattern/ <cmd>`).
-    The anchor puts the cursor at the START of the match, so anchor on the
-    exact text you want changed, not near it: to change the 15 in
-    `retries(15)` use `at /15\\)/ ciw 60` — `at /retries=15/ ciw 60` would
-    change `retries`. <cmd> must be an edit command from the list below,
-    never a motion. Anchored summaries report `(match i of n)` — if n > 1
-    and you didn't pick an ordinal, check you hit the right site.
+    """Edit at the cursor, or anchored: `at /pattern/ <cmd>` (ordinal:
+    `at 2nd /pattern/ <cmd>`). The anchor lands at the START of the match —
+    anchor on the exact text to change: `at /15\\)/ ciw 60` changes the 15
+    in `retries(15)`; `at /retries=15/ ciw 60` would change `retries`.
+    <cmd> is an edit command, never a motion.
 
-    Commands: ciw/caw TEXT, ci(/ci{/ci[/ci"/ci' TEXT (+ di/da to delete),
-    cip/cap TEXT + dip/dap (paragraph = blank-line-delimited block),
-    dd, cc TEXT, D, C TEXT, x, r<char>, o/O TEXT (insert line below/above,
-    TEXT may be multi-line), A/I TEXT (append/insert on line),
-    cs<old><new> (change surround, e.g. cs"' turns "x" into 'x'),
-    ds<char> (delete surround), ysiw<char> (surround word under cursor).
-    Change commands need TEXT, delete commands take none. Everything after
-    the first space is TEXT, verbatim — indentation survives.
+    Commands: ciw/caw TEXT, ci(/{/[/"/' TEXT (di/da delete),
+    cip/cap/dip/dap (paragraph), dd, cc TEXT, D, C TEXT, x, r<char>,
+    o/O TEXT (line below/above, may be multi-line), A/I TEXT (line
+    end/start), i/a TEXT (insert before / append after the cursor char —
+    anchored, `a` lands after the match's FIRST char), cs<old><new>
+    (cs"' turns "x" into 'x'), ds<char>, ysiw<char>. Changes need TEXT,
+    deletes take none; everything after the first space is TEXT, verbatim.
 
-    Registers (move text without retyping it): yy / y<i|a><object> yanks,
-    p/P pastes below/above the cursor line (charwise yanks like yiw paste
-    within the line). Prefix "name targets a named register and works with
-    the anchor: `at /def helper/ "fn dap` cuts the whole function into
-    register "fn"; navigate with motion, then `"fn p`. Only "name-prefixed
-    deletes touch registers — plain dd/dap can't clobber what you carry.
-    Yanks and cuts echo the register content; a wrong name on p fails
-    loudly and lists every register.
+    Registers: yy / y<i|a><obj> yank, p/P paste below/above the cursor line
+    (charwise: within it). `"name` prefix composes with the anchor:
+    `at /def helper/ "fn dap` cuts the function; `"fn p` pastes it. Only
+    "name-prefixed deletes write registers; yanks/cuts echo their content;
+    a wrong name on p lists them all. `u` undoes the last buffer change
+    (repeat to go further; crosses writes; no redo).
 
-    Undo: `u` reverts the last buffer change (one change per call — repeat
-    to go further back; works back through writes too, though only `write`
-    puts the reverted state on disk). If a viewport shows an edit or
-    substitute hit the wrong place, `u` is the recovery — no need to
-    re-open or retype. There is no redo.
-
-    Returns a one-line summary + the post-edit viewport. Failed commands
-    never modify the buffer.
+    Returns a summary (`changed line 9 (match 1 of 3)` — if n > 1, check
+    the site) + post-edit viewport. Failures never touch the buffer.
 
     Examples:
-      edit("at /old_name/ ciw new_name")   -> rename the word at the match
-      edit("at /30\\)/ ciw 60")             -> change the value, anchored on it
-      edit("at /'hello'/ cs'\\"")           -> 'hello' becomes "hello"
-      edit("o import sys")                 -> new line below the cursor
-      edit("at /def helper/ \\"fn dap")     -> cut function into register fn
-      edit("\\"fn p")                       -> paste it below the cursor
-      edit("u")                            -> undo the last change
+      edit("at /old_name/ ciw new_name")
+      edit("at /def helper/ \\"fn dap")   then   edit("\\"fn p")
+      edit("u")
     """
     return session.edit(command)
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def substitute(command: str) -> str:
-    """Ex-style commands on the active buffer — for repetitive, file-wide,
-    or ranged changes where one pattern beats many single edits (call matches
-    first to see every affected site). Forms: `:%s/old/new/g` (whole file),
-    `:s/old/new/` (cursor line), `:10,40s/foo/bar/` (line range),
-    `:/start pat/,/end pat/s/x/y/g` (pattern range), `:g/pat/d` (delete
-    matching lines). Flags: g (all per line), i (ignore case). Regex and
-    replacement are Python re syntax (\\1 for groups). In a pattern range
-    the second address is searched forward FROM the first — "from A to the
-    next B" — and BOTH addresses are inclusive: `/^def /` as the end
-    includes that def line itself. Any address takes a vim-style `+N`/`-N`
-    offset (`/^def /-1`, `$-1`, `10+2`); end on `/pat/-1` for "up to but
-    not including pat". Returns the substitution count + a compact diff of
-    changed lines. Zero matches is a loud error; the buffer is untouched.
-    Each command here is one undo step — if the diff shows an over-match,
-    edit("u") reverts it whole.
+    """Ex commands for file-wide or ranged changes (call matches first to
+    see all sites). Forms: `:%s/old/new/g` (file), `:s/old/new/` (cursor
+    line), `:10,40s/foo/bar/`, `:/start/,/end/s/x/y/g` (pattern range),
+    `:g/pat/d` (delete matching lines). Flags: g, i. Regex and replacement
+    are Python re syntax (\\1 for groups). The pattern-range end is
+    searched forward FROM the start and BOTH addresses are inclusive; any
+    address takes +N/-N — end on `/pat/-1` for "up to but not including".
+    Returns the count + a compact diff of changed lines; zero matches is a
+    loud error; one undo step per command (edit("u") reverts an over-match
+    whole).
 
-    Register ranges — when a block is bounded by patterns rather than a
-    text object (e.g. a Python function with internal blank lines, where
-    dap under-grabs): `:RANGE y NAME` yanks the range into register NAME,
-    `:RANGE d NAME` cuts it (`:10,20y block`,
-    `:/def helper/,/^def /-1d fn` — the -1 keeps the next def line out of
-    the cut). Paste with p/P in the edit tool (works across files).
-    Move-a-function recipe: that cut carries the function plus the blank
-    lines after it, so paste it ABOVE the destination def
-    (`at /def target/ "fn P`) and the spacing lands right on both sides.
-    Bare `:RANGE d` is a plain delete and never touches a register.
-    Yank/cut echo the stored content; you never retype it.
+    Register ranges, for blocks text objects can't select (e.g. a function
+    with internal blank lines): `:RANGE y NAME` yanks, `:RANGE d NAME`
+    cuts — paste with p/P in edit (works across files). Move recipe:
+    `:/def helper/,/^def /-1d fn`, then paste ABOVE the destination def
+    (`at /def target/ "fn P`). Bare `:RANGE d` never touches a register.
 
     Examples:
       substitute(":%s/parse_config/load_config/g")
-      substitute(":g/print\\(.*DEBUG/d")
-      substitute(":/def render/,/^$/s/ctx/context/g")
-      substitute(":/def helper/,/^def /-1d fn")  then  edit("at /def target/ \\"fn P")
+      substitute(":g/DEBUG/d")
+      substitute(":/def helper/,/^def /-1d fn")
     """
     return session.substitute(command)
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def matches(pattern: str, context: int = 0) -> str:
-    """Grep-style listing of all regex matches in the active buffer — one line
-    per matching line, capped at 50, tens of tokens instead of thousands.
-    Call this before rename-like refactors to see every affected site.
-    `context` (0 or 1) adds that many surrounding lines per hit.
+    """Grep-style listing of all regex matches in the active buffer — one
+    line per matching line, capped at 50. Call before rename-like refactors
+    to see every affected site. `context` (0 or 1) adds surrounding lines.
 
-    Examples:
-      matches("parse_config")        -> 3 matches on 3 lines / 12: ...
-      matches("TODO", context=1)
+    Example: matches("parse_config")
     """
     return session.matches(pattern, context)
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def write() -> str:
     """Save the active buffer to disk. Returns confirmation + how many lines
     changed since the last write. Buffers are in-memory until written."""

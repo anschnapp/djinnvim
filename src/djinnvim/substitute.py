@@ -29,7 +29,8 @@ blank lines; paste back with p/P in edit):
   :y                         bare yank: cursor line into the unnamed register
 
 Flags: g (all occurrences per line), i (ignore case).
-Replacement uses Python re syntax (\\1 for groups, not vim's \\r).
+Replacement uses Python re syntax (\\1 for groups, not vim's \\r); a
+backslash before punctuation is that literal char, vim-style (\\( -> ().
 
 Output is a count plus a compact diff of changed lines — never the file.
 Failures raise SubstituteError loudly; the buffer and cursor are untouched.
@@ -179,6 +180,29 @@ def _resolve_addr(buf: Buffer, addr: str, search_from: int) -> int:
     return i
 
 
+def _unescape_replacement(new: str) -> str:
+    """Vim/sed treat a backslash before punctuation in the REPLACEMENT as that
+    literal char (`load\(x\)` -> `load(x)`); Python's re keeps the backslash,
+    silently corrupting the file. Unescape punctuation; leave group refs
+    (\\1, \\g<..>), letter escapes (\\n, \\t) and \\\\ for re to handle."""
+    out = []
+    i = 0
+    while i < len(new):
+        ch = new[i]
+        if ch == "\\" and i + 1 < len(new):
+            nxt = new[i + 1]
+            if not nxt.isalnum() and nxt != "\\":
+                out.append(nxt)  # \( -> (
+            else:
+                out.append(ch)
+                out.append(nxt)  # \1, \g, \n, \\ pass through to re
+            i += 2
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
 def _compile(pattern: str, flags: str) -> re.Pattern:
     try:
         return re.compile(pattern, re.IGNORECASE if "i" in flags else 0)
@@ -191,7 +215,7 @@ def _substitute(
 ) -> str:
     rx = _compile(old, flags)
     count = 0 if "g" in flags else 1
-    new = new.replace(r"\/", "/")
+    new = _unescape_replacement(new)
 
     total = 0
     changed: list[tuple[int, str, str]] = []  # (old line no 0-based, old, new)

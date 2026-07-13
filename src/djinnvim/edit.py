@@ -5,7 +5,7 @@ Optional ordinal: `at 2nd /pattern/ <command>` (2nd match after cursor).
 Anchored summaries carry the ambiguity count: `changed line 9 (match 1 of 3)`.
 
 Commands: ciw caw  ci( ci{ ci[ ci" ci'  (+ di/da variants)  diw
-          cip/cap dip/dap (paragraph)  dd  cc  o O  A I  D C  x r
+          cip/cap dip/dap (paragraph)  dd  cc  o O  A I  i a  D C  x r
           cs{old}{new}  ds{char}  ysiw{char}  (vim-surround)
           yy  y{i,a}{object}  p P  with register prefix `"name <cmd>`
           ("name yap / "name dd cuts / "name p; bare y→unnamed register)
@@ -31,7 +31,7 @@ class EditError(Exception):
 
 _ANCHOR = re.compile(r"^at\s+(?:(\d+)(?:st|nd|rd|th)\s+)?/((?:\\.|[^/])*)/\s*")
 _OBJECT_CMD = re.compile(r"^([cd])([ia])([wWp(){}\[\]\"'`])(?:\s(.*))?$", re.DOTALL)
-_INSERT_CMD = re.compile(r"^(cc|C|o|O|A|I)(?:\s(.*))?$", re.DOTALL)
+_INSERT_CMD = re.compile(r"^(cc|C|o|O|A|I|i|a)(?:\s(.*))?$", re.DOTALL)
 _CS_CMD = re.compile(r"^cs(.)(.)$")
 _DS_CMD = re.compile(r"^ds(.)$")
 _YSIW_CMD = re.compile(r"^ysiw(.)$")
@@ -313,7 +313,7 @@ def _apply(buf: Buffer, cmd: str) -> tuple[str, int, int]:
     if m:
         op, text = m.group(1), m.group(2)
         if not text:
-            if op in ("C", "A", "I"):
+            if op in ("C", "A", "I", "i", "a"):
                 raise EditError(f"{op} needs TEXT: `{op} <text>`")
             text = ""  # bare o/O/cc: insert/leave an empty line
         parts = text.split("\n")
@@ -348,6 +348,14 @@ def _apply(buf: Buffer, cmd: str) -> tuple[str, int, int]:
         if op == "I":
             indent = len(line) - len(line.lstrip())
             return _splice(buf, i, indent, indent, text)
+
+        if op == "i":  # insert before the cursor char (anchored: before the match)
+            at = min(col, len(line))
+            return _splice(buf, i, at, at, text)
+
+        if op == "a":  # append after the cursor char (vim semantics — anchored,
+            at = min(col + 1, len(line)) if line else 0  # after the match's FIRST char)
+            return _splice(buf, i, at, at, text)
 
     m = _OBJECT_CMD.match(cmd)
     if m:
@@ -416,7 +424,7 @@ def _apply(buf: Buffer, cmd: str) -> tuple[str, int, int]:
     raise EditError(
         f"unknown edit command: {cmd!r} "
         "(supported: ciw/caw ci(/{{/[/\"/' di/da-variants cip/dap dd cc D C x r "
-        "o O A I cs<old><new> ds<char> ysiw<char> yy y<i|a><obj> p P "
+        "o O A I i a cs<old><new> ds<char> ysiw<char> yy y<i|a><obj> p P "
         "\"name-prefix for registers, u to undo)"
     )
 
