@@ -128,6 +128,27 @@ def test_each_dap_separate_paragraphs_all_edited():
     assert "edited 2 match(es)" in summary
 
 
+# --- the diff echo names exactly what was edited (dogfood #4, bug 1) ---
+
+def test_each_diff_never_misattributes_repeated_lines():
+    # difflib-derived diffs may align a deletion onto identical lines of a
+    # SURVIVING function (here: its "    pass"), echoing a truthful-but-
+    # misleading diff. The echo must name the removed block itself.
+    buf = make([
+        "def keep():", "    pass", "", "",
+        "# DEPRECATED: x", "def dead():", "    pass", "", "",
+        "def keep2():", "    pass",
+    ])
+    summary, *_ = execute(buf, "at each /# DEPRECATED/ dap")
+    assert buf.lines == [
+        "def keep():", "    pass", "", "", "def keep2():", "    pass",
+    ]
+    assert "- 5  # DEPRECATED: x" in summary
+    assert "- 6  def dead():" in summary
+    assert "- 7      pass" in summary
+    assert "- 2      pass" not in summary  # keep()'s pass was NOT deleted
+
+
 # --- undo: the whole batch is one step ---
 
 def test_each_is_one_undo_step():
@@ -138,6 +159,27 @@ def test_each_is_one_undo_step():
     assert buf.lines == ["foo", "foo", "foo"]
     assert "at each /foo/ ciw bar" in summary
     assert not buf.undo_stack
+
+
+def test_each_undo_echo_is_compact_not_a_span_viewport():
+    # Undoing a batch must NOT echo a viewport spanning first-to-last site
+    # (dogfood #4, bug 2: ~420 lines live — a full-file read in disguise).
+    # It echoes the inverted compact diff instead, symmetric with the batch.
+    top = ["# DEPRECATED", "def a():", "    return 0", "", ""]
+    mid = []
+    for i in range(60):
+        mid += [f"def keep{i}():", f"    return {i}", "", ""]
+    bot = ["# DEPRECATED", "def z():", "    return 9"]
+    buf = make(top + mid + bot)
+    execute(buf, "at each /# DEPRECATED/ dap")
+    summary, first, last = execute(buf, "u")
+    assert buf.lines == top + mid + bot
+    assert (first, last) == (None, None)  # the diff is the echo, no viewport
+    assert "undid: at each /# DEPRECATED/ dap" in summary
+    assert "+   1  # DEPRECATED" in summary  # restored lines, post-undo numbering
+    assert "+ 246  # DEPRECATED" in summary
+    assert "def keep30" not in summary  # untouched middle stays out of the echo
+    assert len(summary.splitlines()) < 20
 
 
 # --- the ex-side signpost ---

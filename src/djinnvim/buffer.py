@@ -19,6 +19,9 @@ class UndoEntry:
     cursor_line: int   # cursor before the command
     cursor_col: int
     command: str       # the command being undone, for the echo
+    # exact changed-tuples of the command (batch edits set this), so undo
+    # can echo the inverted compact diff instead of a spanning viewport
+    changed: list[tuple[int, str | None, str | None]] | None = None
 
 
 @dataclass
@@ -40,8 +43,11 @@ class Buffer:
         buf.saved_lines = list(buf.lines)
         return buf
 
-    def push_undo(self, lines: list[str], cursor: tuple[int, int], command: str) -> None:
-        self.undo_stack.append(UndoEntry(lines, cursor[0], cursor[1], command))
+    def push_undo(
+        self, lines: list[str], cursor: tuple[int, int], command: str,
+        changed: list[tuple[int, str | None, str | None]] | None = None,
+    ) -> None:
+        self.undo_stack.append(UndoEntry(lines, cursor[0], cursor[1], command, changed))
         if len(self.undo_stack) > MAX_UNDO:
             del self.undo_stack[0]
 

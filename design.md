@@ -299,11 +299,72 @@ e2e (`e2e/e2e_each.py`): matches pre-check → `:g//normal` reflex signposted
 removes both marked blocks with a plain-text diff echo → one `u` reverts
 the whole batch → redo → write, exact target diff.
 
+## Dogfood #4 findings (2026-07-14, pre-sweep probe)
+
+Fourth live dogfood (Fable, warm operator), decided in conversation as the
+cheap probe before spending sweep budget: the v0.8 surfaces had never run
+live. Task: the new `purge-blocks` generator's own output (501 lines,
+seed 99, 6 marked blocks). Result: **exact target match, ~10 keyhole
+calls, file never read in full** — one iterated anchored `dap` plus one
+`at each /# DEPRECATED/ dap` for the remaining 5; two-blank spacing came
+out right everywhere with zero patch-up.
+
+What held up, live: labeled caret in both shapes (`^ on "#"`;
+`^ on "s" of "use"` names the exact ciw span even landing mid-word); the
+`:g//normal` signpost fires and carries the user's pattern into the
+suggested `at each` form; transactional rollback names the failing site
+and touches nothing; batch + iterated forms compose (iterated first, batch
+for the rest, `match i of n` bookkeeping consistent throughout).
+
+Three echo-layer bugs found (buffer semantics were correct throughout —
+every miss was in what the tool *said*, not what it did):
+
+1. **`_each_diff` misalignment.** It re-derived the batch diff by running
+   difflib over pre/post, discarding the per-site spans `_each` already
+   had. Around repeated lines (blanks, `    pass`) difflib picks an
+   equivalent-but-misleading alignment — minimal repro echoed
+   `- 2      pass` from the *surviving* function as deleted. A
+   truthful-but-wrong-looking diff is echo-discipline poison: a cold agent
+   would `u` a good edit. Fix: build the changed-list from exact per-site
+   prefix/suffix trims (substitute already builds its diffs from the
+   operation, never difflib).
+2. **Batch undo dumped a ~420-line viewport** — the "restored region" of
+   an `at each` undo spans first-to-last site, a full-file read in
+   disguise (the exact cost keyhole exists to avoid), silently eaten by
+   any benchmark trial where the agent undoes a batch. Fix: the undo entry
+   carries the batch's exact changed-tuples; `u` echoes the inverted
+   compact diff (symmetric with the batch echo) instead of a viewport.
+   Known sibling, noted not fixed: `u` after a large `substitute`
+   (`:%s//g`, `:g//d`) has the same bomb shape — its entries carry no
+   tuples yet; extend the same mechanism if it shows up in practice.
+3. **`write`'s changed-count inflated by difflib `autojunk`:** reported
+   "769 line(s) changed" for a 41-line deletion (blank lines are
+   "popular" on 200+-line files and get junked, wrecking alignment;
+   verified: `autojunk=False` gives exactly 41). `_each_diff` already
+   passed `autojunk=False`; `session.py`'s write didn't.
+
+All three fixed as **v0.9** (regression tests written failing-first);
+the sweep SHA moves from v0.8 to v0.9.
+
+**v0.9 is implemented and green (2026-07-14, same session):** the three
+fixes above. `_each` collects exact per-site changed-tuples (guarded
+prefix/suffix trim per site, `_site_delta`; same-line matches merged into
+one old→new pair; difflib gone from edit.py) and returns them alongside
+the report; `UndoEntry` carries the tuples (`push_undo(..., changed=)`)
+so `u` on a batch echoes the inverted compact diff (pure insertions,
+post-undo numbering) instead of a spanning viewport; `session.py`'s write
+count passes `autojunk=False`. 267 tests (3 new, each written failing
+with the live symptom first: the misattributed `- 2      pass`, the
+`(0, 247)` span viewport, the "769 line(s) changed"). Manual probe over
+fresh MCP stdio replayed dogfood #4 on the same generated file: batch
+diff names the blocks (comment-first, trailing blanks), undo echo 42
+lines (was ~420), write reports exactly 41 changed, exact target match.
+
 **Next session:** ~~(1) build the labeled caret + tests, verify over MCP
 stdio~~ ✅ done 2026-07-14 (v0.7 above); (2) start the benchmark re-run —
 haiku → sonnet → opus, every row version-stamped, one SHA for the whole
-sweep (now v0.8: labeled caret + `at each` + purge-blocks must land BEFORE
-trial one; no mid-sweep tool changes). Composite and move-multi included —
+sweep (now v0.9: dogfood #4's three echo fixes must land BEFORE trial
+one; no mid-sweep tool changes). Composite and move-multi included —
 composite is the cell that diagnoses whether the rendering fix cures the
 indentation misses.
 
@@ -363,10 +424,12 @@ src/djinnvim/
                     on every tool (plain-text results — the structured
                     {"result": ...} form reached the model JSON-escaped)
                     + descriptions cut to ~half
-tests/           ✅ 264 tests (motion, edit, substitute, registers, undo,
+tests/           ✅ 267 tests (motion, edit, substitute, registers, undo,
                     address offsets, i/a inserts, replacement unescaping,
                     at-each global edits, server round-trips, viewport
-                    format + caret labels, benchmark gen/report)
+                    format + caret labels, benchmark gen/report; v0.9:
+                    dogfood #4 echo regressions — exact at-each diff,
+                    compact batch-undo diff, exact write count)
 ```
 
 Verified end-to-end over the MCP stdio protocol (scripted client running the

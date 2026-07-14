@@ -155,7 +155,7 @@ class Session:
         changed = sum(
             max(i2 - i1, j2 - j1)
             for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(
-                None, buf.saved_lines, buf.lines
+                None, buf.saved_lines, buf.lines, autojunk=False
             ).get_opcodes()
             if tag != "equal"
         )

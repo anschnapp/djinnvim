@@ -139,6 +139,25 @@ def test_write_reports_changed_lines(sample):
     assert "options = {}" in sample.read_text()
 
 
+def test_write_changed_count_exact_on_repetitive_files(tmp_path, monkeypatch):
+    # dogfood #4, bug 3: difflib autojunk treats popular lines (blanks) as
+    # junk on 200+-line files, wrecking the alignment — the live probe's
+    # 41-line deletion was reported as "769 line(s) changed". Exact repro:
+    # the same generated purge-blocks start/target pair.
+    import sys
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).parent.parent / "benchmark"))
+    from gen import generate
+    doc = generate("purge-blocks", 500, 99)
+    f = tmp_path / doc.filename
+    f.write_text(doc.start)
+    monkeypatch.setattr(server, "session", Session(root=tmp_path))
+    server.open(doc.filename)
+    server.session.active.lines = doc.target.splitlines()
+    server.session.active.dirty = True
+    out = server.write()
+    assert "41 line(s) changed" in out
+
+
 def test_full_session_flow(sample):
     """The design.md example session shape: open, motion, edit, write."""
     server.open("config.py")

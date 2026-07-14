@@ -22,7 +22,6 @@ already carries the content (yanks, register cuts). Failures raise
 EditError loudly and never modify the buffer or move the cursor.
 """
 
-import difflib
 import re
 
 from . import motion
@@ -78,12 +77,12 @@ def execute(
         if reg_name is not None:
             raise EditError('"name registers do not compose with at each')
         try:
-            summary = _each(buf, m.group(1), command[m.end():])
+            summary, changed = _each(buf, m.group(1), command[m.end():])
         except EditError:
             buf.cursor.line, buf.cursor.col = saved
             raise
         if buf.lines != pre_lines:
-            buf.push_undo(pre_lines, saved, original)
+            buf.push_undo(pre_lines, saved, original, changed=changed)
         buf.dirty = True
         return summary, None, None
 
@@ -129,7 +128,7 @@ def execute(
     return summary, first, last
 
 
-def _undo(buf: Buffer) -> tuple[str, int, int]:
+def _undo(buf: Buffer) -> tuple[str, int | None, int | None]:
     """u: pop one snapshot. Restores lines + pre-command cursor; dirty is
     recomputed against saved_lines so undoing back across a write is exact.
     Registers deliberately survive (vim semantics)."""
@@ -147,6 +146,12 @@ def _undo(buf: Buffer) -> tuple[str, int, int]:
     summary = f"undid: {label}"
     if buf.undo_stack:
         summary += f" ({len(buf.undo_stack)} more undo step(s))"
+    if entry.changed is not None:
+        # batch edits restore scattered sites: a spanning viewport would
+        # dump everything between the first and last site — echo the
+        # inverted compact diff instead (numbering = post-undo lines)
+        inverted = [(ln, new, old) for ln, old, new in entry.changed]
+        return summary + "\n" + diff_lines(inverted), None, None
     first, last = _restored_span(before, buf.lines)
     return summary, first, last
 
@@ -177,12 +182,16 @@ def _split_register(command: str) -> tuple[str | None, str]:
     return m.group(1), command[m.end():]
 
 
-def _each(buf: Buffer, pattern: str, cmd: str) -> str:
+def _each(
+    buf: Buffer, pattern: str, cmd: str
+) -> tuple[str, list[tuple[int, str | None, str | None]]]:
     """at each /pattern/ <cmd>: one edit command at EVERY match. Per match
     (column-precise), not per-line like vim's :g. Bottom-up so earlier
     positions stay valid; each site is revalidated first — a match consumed
     by a previous edit in the batch is skipped and reported. Transactional:
-    a command failure at any surviving site rolls the whole batch back."""
+    a command failure at any surviving site rolls the whole batch back.
+    Returns (report, changed-tuples); the tuples come from exact per-site
+    spans, never difflib — repeated lines must not misalign the echo."""
     if not cmd:
         raise EditError("at each needs a command: at each /pattern/ <cmd>")
     bare = cmd.strip()
@@ -206,9 +215,11 @@ def _each(buf: Buffer, pattern: str, cmd: str) -> str:
 
     pre_lines = list(buf.lines)
     applied = 0
+    changed: list[tuple[int, str | None, str | None]] = []
     for line_i, col in reversed(hits):  # bottom-up: edits don't shift earlier sites
         if line_i >= len(buf.lines) or not rx.match(buf.lines[line_i], col):
             continue  # consumed by a previous edit in this batch
+        before = list(buf.lines)
         buf.cursor.line, buf.cursor.col = line_i, col
         try:
             _apply(buf, cmd)
@@ -218,7 +229,22 @@ def _each(buf: Buffer, pattern: str, cmd: str) -> str:
                 f"at each /{pattern}/ failed at the match on line "
                 f"{line_i + 1}: {e} — no changes applied"
             ) from None
+        # bottom-up keeps every earlier site's numbering pre-edit exact,
+        # so prepending yields an ascending pre-edit-numbered list
+        changed = _site_delta(before, buf.lines) + changed
         applied += 1
+
+    # two matches on one line = two edits: merge into one old→new pair
+    merged: list[tuple[int, str | None, str | None]] = []
+    for t in changed:
+        if (
+            merged and t[0] == merged[-1][0]
+            and t[1] is not None and t[2] is not None
+            and merged[-1][1] is not None and merged[-1][2] is not None
+        ):
+            merged[-1] = (t[0], t[1], merged[-1][2])
+        else:
+            merged.append(t)
 
     skipped = len(hits) - applied
     if skipped:
@@ -228,23 +254,33 @@ def _each(buf: Buffer, pattern: str, cmd: str) -> str:
         )
     else:
         head = f"edited {applied} match(es)"
-    return head + "\n" + _each_diff(pre_lines, buf.lines)
+    return head + "\n" + diff_lines(merged), merged
 
 
-def _each_diff(pre: list[str], post: list[str]) -> str:
-    """Substitute-style compact ±diff (pre-edit line numbers) of the batch."""
-    changed: list[tuple[int, str | None, str | None]] = []
-    sm = difflib.SequenceMatcher(None, pre, post, autojunk=False)
-    for tag, i1, i2, j1, j2 in sm.get_opcodes():
-        if tag == "equal":
-            continue
-        news = post[j1:j2]
-        for k in range(max(i2 - i1, len(news))):
-            line_no = min(i1 + k, max(i2 - 1, i1))
-            old = pre[i1 + k] if i1 + k < i2 else None
-            new = news[k] if k < len(news) else None
-            changed.append((line_no, old, new))
-    return diff_lines(changed)
+def _site_delta(
+    before: list[str], after: list[str]
+) -> list[tuple[int, str | None, str | None]]:
+    """Changed-tuples for ONE contiguous edit: guarded common prefix/suffix
+    trim. Deterministic and exact for a single site — unlike difflib, which
+    may align a deletion onto identical lines elsewhere."""
+    lo = 0
+    n = min(len(before), len(after))
+    while lo < n and before[lo] == after[lo]:
+        lo += 1
+    hi_b, hi_a = len(before) - 1, len(after) - 1
+    while hi_b >= lo and hi_a >= lo and before[hi_b] == after[hi_a]:
+        hi_b -= 1
+        hi_a -= 1
+    olds = before[lo:hi_b + 1]
+    news = after[lo:hi_a + 1]
+    return [
+        (
+            lo + k,
+            olds[k] if k < len(olds) else None,
+            news[k] if k < len(news) else None,
+        )
+        for k in range(max(len(olds), len(news)))
+    ]
 
 
 def _dispatch(
