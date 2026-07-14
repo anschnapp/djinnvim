@@ -360,6 +360,64 @@ fresh MCP stdio replayed dogfood #4 on the same generated file: batch
 diff names the blocks (comment-first, trailing blanks), undo echo 42
 lines (was ~420), write reports exactly 41 changed, exact target match.
 
+## Haiku probe & description routing pass (2026-07-14, v0.10)
+
+First probe cells on v0.9 (haiku): rename-trap green across sizes both
+conditions, but **keyhole failed purge-blocks@500 with a silent success
+claim** (baseline passed). The tool profile is the diagnosis: 11 matches,
+23 motion, 6 substitute, 1 write — **zero `edit` calls**. Haiku did six
+per-block range deletes in substitute and miscounted blanks; it never
+touched `at each` or `dap`.
+
+Root-cause layer found while diagnosing: **Claude Code defers MCP tool
+schemas behind ToolSearch in interactive sessions too**, not just headless
+(confirmed live — the dogfooding sessions themselves get the djinnvim
+tools deferred). The model starts with tool *names* only; descriptions
+enter context per-ToolSearch-fetch (default max_results 5, we have 6
+tools). The failing trial made exactly 2 ToolSearch calls — whether
+`edit`'s description (the only home of `at each`/`dap`) ever entered its
+context is unknowable because the runner discards the stream-json.
+Consequences, decided in conversation:
+
+- **Deferral stays the default benchmark condition** — it is the real
+  condition for Claude Code users. A preloaded-schemas preamble becomes an
+  *ablation cell* (isolates discoverability cost from description
+  quality), not the default.
+- **Runner must save per-trial transcripts** (pending) — without the
+  ToolSearch queries, "never loaded edit" vs "loaded it, didn't use it"
+  can't be attributed.
+- **Renaming `edit` considered and parked:** in the deferred world the
+  name is the pre-fetch signal, and `edit` is the strongest keyword magnet
+  an editing task has; the vim-native alternative `normal` is exactly the
+  false friend principle #1's corollary warns about. If any name smells,
+  it's `substitute` (already on record from dogfood #2). Revisit only if
+  transcripts show ToolSearch ranking it wrong.
+- **Description routing pass (v0.10, landed):** three changes, all
+  description-only, no behavior change — (1) `substitute` states it is
+  line/regex-shaped and signposts `at each /pat/ <cmd>` for whole-block
+  work (static sibling of the `:g//normal` runtime signpost — haiku was
+  *in* substitute six times; that's where the redirect must live);
+  (3) `edit`'s at-each paragraph gains the structural idiom + example
+  (`at each /# obsolete/ dap` — deliberately NOT the benchmark's literal
+  `# DEPRECATED` marker, to avoid teaching to the test); (4) `open` (the
+  one tool every trial fetches first) gains a one-line tool-routing hint.
+  Runtime signpost on block-shaped range deletes (#2) deferred — possibly
+  noisy for legitimate range deletes. 267 tests green; sweep SHA moves to
+  v0.10.
+
+**Opus probe on v0.10 (same day, 2 trials, purge-blocks@500 keyhole):
+both exact-match.** Each trial: ONE `edit` call and it was the intended
+idiom (`at each /# DEPRECATED/ dap`) after `matches` pre-checks; $0.35 /
+$0.58, 16 / 28 calls. Deferral evidence: opus issued a single
+`select:`-all-six ToolSearch (max_results 10) up front — it loads every
+schema before working, so the haiku failure mode (2 ToolSearch calls,
+possibly never fetching `edit`) is model behavior under deferral, not a
+harness constant. Transcripts now durable: runner already wrote
+`transcript.jsonl` per workdir; the fix was `--workdirs
+benchmark/results/workdirs` instead of default /tmp (no code change).
+Haiku re-probe on v0.10 still pending. Rows stamped `6c8261d-dirty`
+(v0.10 uncommitted at probe time).
+
 **Next session:** ~~(1) build the labeled caret + tests, verify over MCP
 stdio~~ ✅ done 2026-07-14 (v0.7 above); (2) start the benchmark re-run —
 haiku → sonnet → opus, every row version-stamped, one SHA for the whole

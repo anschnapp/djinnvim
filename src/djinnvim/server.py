@@ -22,7 +22,10 @@ session = Session(Path(os.environ.get("DJINNVIM_ROOT", os.getcwd())))
 def open(path: str) -> str:
     """Open a file as the active buffer (or switch to an already-open one).
     Returns metadata + a small viewport, never the full content. Navigate by
-    pattern with `motion`, not by reading."""
+    pattern with `motion`, not by reading. Then: `matches` to see all sites
+    of a pattern, `edit` for vim normal-mode edits (text objects, whole
+    blocks/paragraphs, registers, undo), `substitute` for ex-style regex
+    line edits."""
     return session.open(path)
 
 
@@ -52,9 +55,11 @@ def edit(command: str) -> str:
     `at each /pattern/ <cmd>` applies the command at EVERY match (top to
     bottom, cursor at each match start) and returns a compact ±diff instead
     of a viewport. One undo step; if the command fails at any site, nothing
-    is changed. Edit commands only (no y/p/u, no registers). To repeat an
-    edit match-by-match instead, reissue the same `at /pattern/ <cmd>` —
-    it anchors on the NEXT match each time.
+    is changed. Edit commands only (no y/p/u, no registers). Text objects
+    make it structural: `at each /# obsolete/ dap` deletes every marked
+    block/paragraph whole — blank spacing handled, no line counting. To
+    repeat an edit match-by-match instead, reissue the same
+    `at /pattern/ <cmd>` — it anchors on the NEXT match each time.
 
     Commands: ciw/caw TEXT, ci(/{/[/"/' TEXT (di/da delete),
     cip/cap/dip/dap (paragraph), dd, cc TEXT, D, C TEXT, x, r<char>,
@@ -77,6 +82,7 @@ def edit(command: str) -> str:
     Examples:
       edit("at /old_name/ ciw new_name")
       edit("at each /log_debug\\(/ dd")
+      edit("at each /# obsolete/ dap")
       edit("at /def helper/ \\"fn dap")   then   edit("\\"fn p")
       edit("u")
     """
@@ -95,6 +101,12 @@ def substitute(command: str) -> str:
     Returns the count + a compact diff of changed lines; zero matches is a
     loud error; one undo step per command (edit("u") reverts an over-match
     whole).
+
+    This tool is line/regex-shaped. To delete or change a whole
+    block/paragraph at every match, don't hand-count line ranges (blank
+    lines miscount) — use edit's `at each /pattern/ <cmd>`, e.g.
+    `at each /# obsolete/ dap`; `:g/pat/d` deletes only the matching
+    lines themselves.
 
     Register ranges, for blocks text objects can't select (e.g. a function
     with internal blank lines): `:RANGE y NAME` yanks, `:RANGE d NAME`
