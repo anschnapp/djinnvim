@@ -207,12 +207,27 @@ fact-to-read:
   for the benchmark; the cursor-rendering ablation can measure its worth
   by ablating *down* to the bare caret.
 
-**Next session:** (1) build the labeled caret + tests, verify over MCP
-stdio; (2) start the v0.6+ benchmark re-run — haiku → sonnet → opus, every
-row version-stamped, one SHA for the whole sweep (the labeled caret must
-land BEFORE trial one; no mid-sweep tool changes). Composite and move-multi
-included — composite is the cell that diagnoses whether the rendering fix
-cures the indentation misses.
+**v0.7 is implemented and green (2026-07-14):** the labeled caret, as
+specced above. `CURSOR_STYLE` now reads the `DJINNVIM_CURSOR_STYLE` env var
+(default `caret-labeled`; `caret` = the bare marker, for the ablation).
+Label extraction lives in `viewport._caret_label`, reusing `edit._is_word`
++ `edit._word_span` (no import cycle — edit never imports viewport), so
+`of "word"` is exactly the `ciw` span; single-char words keep the `of`
+(`on "x" of "x"`) so its presence always means "ciw works here and changes
+this"; tab renders as `on tab`; whitespace as `on " "`. Tool descriptions
+deliberately unchanged — the label is self-explanatory prose, and the v0.6
+half-length descriptions stay as they are. 242 tests; new e2e
+(`e2e/e2e_labeled_caret.py`): `/retries=15/` lands at match START and the
+label *says so* before any edit → re-anchor on the value → `ciw` changes
+exactly what the label named; punctuation and end-of-line label shapes
+verified as plain multi-line text over real MCP stdio.
+
+**Next session:** ~~(1) build the labeled caret + tests, verify over MCP
+stdio~~ ✅ done 2026-07-14 (v0.7 above); (2) start the v0.6+ benchmark
+re-run — haiku → sonnet → opus, every row version-stamped, one SHA for the
+whole sweep (the labeled caret must land BEFORE trial one; no mid-sweep
+tool changes). Composite and move-multi included — composite is the cell
+that diagnoses whether the rendering fix cures the indentation misses.
 
 ```
 src/djinnvim/
@@ -220,7 +235,9 @@ src/djinnvim/
                     saved_lines snapshot (for write's "N lines changed" report);
                     v0.4: UndoEntry + capped undo_stack (MAX_UNDO 100)
   viewport.py    ✅ renderer: line-number gutter, → cursor line, ^ column marker,
-                    2/1/2 default context; CURSOR_STYLE config flag (caret only in v0)
+                    2/1/2 default context; v0.7: labeled caret (`^ on "r" of
+                    "retries"`, word = exact ciw span), CURSOR_STYLE via
+                    DJINNVIM_CURSOR_STYLE env (caret-labeled default | caret)
   motion.py      ✅ /  ?  n  N  :N  gg  G  f<char>  F<char>; wrapping search
                     reports `match i of n (wrapped)`; f/F are strictly
                     cursor-line-local; find_matches shared with edit's anchor
@@ -262,9 +279,10 @@ src/djinnvim/
                     on every tool (plain-text results — the structured
                     {"result": ...} form reached the model JSON-escaped)
                     + descriptions cut to ~half
-tests/           ✅ 235 tests (motion, edit, substitute, registers, undo,
+tests/           ✅ 242 tests (motion, edit, substitute, registers, undo,
                     address offsets, i/a inserts, replacement unescaping,
-                    server round-trips, viewport format, benchmark gen/report)
+                    server round-trips, viewport format + caret labels,
+                    benchmark gen/report)
 ```
 
 Verified end-to-end over the MCP stdio protocol (scripted client running the

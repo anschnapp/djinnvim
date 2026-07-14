@@ -10,14 +10,19 @@ Format (see design.md):
 - line numbers 1-based, right-aligned, two-space gutter
 - `→` marks the cursor line
 - `^` column marker on its own line, only when show_column is True
-- cursor rendering style is a config flag (future ablation: caret / inline / block)
+- `caret-labeled` (default) appends a factual prose label to the caret,
+  compiler-diagnostic style: `^ on "r" of "retries"` — the word is the
+  exact `ciw` span, so the label names what an edit would change
+- cursor rendering style is a config flag (ablation: caret / caret-labeled)
 """
+
+import os
 
 from .buffer import Buffer
 
 DEFAULT_CONTEXT = 2  # lines above and below
 
-CURSOR_STYLE = "caret"  # caret | inline | block  (v0 implements caret only)
+CURSOR_STYLE = os.environ.get("DJINNVIM_CURSOR_STYLE", "caret-labeled")  # caret | caret-labeled
 
 
 def render(
@@ -38,5 +43,25 @@ def render(
         marker = "→" if i == buf.cursor.line else " "
         out.append(f"{marker} {i + 1:>{width}}  {buf.lines[i]}")
         if show_column and i == buf.cursor.line:
-            out.append(" " * (2 + width + 2 + buf.cursor.col) + "^")
+            caret = "^"
+            if CURSOR_STYLE == "caret-labeled":
+                caret += " " + _caret_label(buf.lines[i], buf.cursor.col)
+            out.append(" " * (2 + width + 2 + buf.cursor.col) + caret)
     return "\n".join(out)
+
+
+def _caret_label(line: str, col: int) -> str:
+    """Factual description of the char under the caret. On a word char the
+    word is the exact `ciw` span (same `_word_span` as edit.py) — the label
+    must never name something an edit wouldn't touch."""
+    from .edit import _is_word, _word_span
+
+    if col >= len(line):
+        return "at end of line"
+    ch = line[col]
+    if _is_word(ch):
+        start, end = _word_span(line, col, around=False)
+        return f'on "{ch}" of "{line[start:end]}"'
+    if ch == "\t":
+        return 'on tab'
+    return f'on "{ch}"'

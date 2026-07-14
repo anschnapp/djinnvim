@@ -169,5 +169,59 @@ def test_viewport_column_marker():
     out = render(buf, show_column=True)
     assert out.splitlines() == [
         "→ 1  hello world",
+        '           ^ on "w" of "world"',
+    ]
+
+
+def test_viewport_bare_caret_style(monkeypatch):
+    monkeypatch.setattr("djinnvim.viewport.CURSOR_STYLE", "caret")
+    buf = Buffer(path=None, lines=["hello world"])
+    buf.cursor.col = 6
+    out = render(buf, show_column=True)
+    assert out.splitlines() == [
+        "→ 1  hello world",
         "           ^",
     ]
+
+
+def test_caret_label_mid_word():
+    # the label names the exact ciw span, not the word boundary vim's w uses
+    buf = Buffer(path=None, lines=["    retries=15)"])
+    buf.cursor.col = 6
+    out = render(buf, show_column=True)
+    assert out.splitlines()[-1].strip() == '^ on "t" of "retries"'
+
+
+def test_caret_label_punctuation():
+    buf = Buffer(path=None, lines=["    retries=15)"])
+    buf.cursor.col = 14
+    out = render(buf, show_column=True)
+    assert out.splitlines()[-1].strip() == '^ on ")"'
+
+
+def test_caret_label_end_of_line():
+    buf = Buffer(path=None, lines=["ab"])
+    buf.cursor.col = 2
+    out = render(buf, show_column=True)
+    assert out.splitlines()[-1].strip() == "^ at end of line"
+
+
+def test_caret_label_empty_line():
+    buf = Buffer(path=None, lines=[""])
+    buf.cursor.col = 0
+    out = render(buf, show_column=True)
+    assert out.splitlines()[-1].strip() == "^ at end of line"
+
+
+def test_caret_label_single_char_word():
+    buf = Buffer(path=None, lines=["x = 1"])
+    buf.cursor.col = 0
+    out = render(buf, show_column=True)
+    assert out.splitlines()[-1].strip() == '^ on "x" of "x"'
+
+
+def test_caret_label_space():
+    buf = Buffer(path=None, lines=["a b"])
+    buf.cursor.col = 1
+    out = render(buf, show_column=True)
+    assert out.splitlines()[-1].strip() == '^ on " "'
