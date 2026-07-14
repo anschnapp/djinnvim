@@ -118,6 +118,21 @@ def test_move_multi_order_and_content():
     assert block.count("\n\n\n") == 3  # the four defs are contiguous
 
 
+def test_purge_blocks_removal_only_and_dap_safe():
+    doc = generate("purge-blocks", 500, seed=0)
+    assert doc.start.count("# DEPRECATED") >= 3
+    assert "# DEPRECATED" not in doc.target
+    start_lines = doc.start.splitlines()
+    for line in doc.target.splitlines():
+        assert line in start_lines  # pure removal, nothing rewritten
+    assert "\n\n\n\n" not in doc.target  # exactly two blanks survive
+    # marked blocks are single paragraphs (no internal blanks), so dap
+    # grabs exactly the marker + function
+    for chunk in doc.start.split("\n\n\n"):
+        if chunk.startswith("# DEPRECATED"):
+            assert "\n\n" not in chunk
+
+
 def test_move_func_same_content():
     doc = generate("move-func", 500, seed=0)
     assert sorted(doc.start.splitlines()) == sorted(doc.target.splitlines())

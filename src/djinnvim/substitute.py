@@ -51,6 +51,7 @@ class SubstituteError(Exception):
 
 _PATTERN = r"((?:\\.|[^/])*)"
 _GLOBAL_DELETE = re.compile(rf"^g/{_PATTERN}/d$")
+_GLOBAL_NORMAL = re.compile(rf"^g/{_PATTERN}/\s*norm(?:al)?\b")
 _SUBST = re.compile(rf"^s/{_PATTERN}/{_PATTERN}/([gi]*)$")
 _ADDR = re.compile(rf"^(?:\d+|\$|\.|/{_PATTERN}/)(?:[+-]\d+)?")
 _OFFSET = re.compile(r"([+-]\d+)$")
@@ -81,6 +82,14 @@ def _run(
     m = _GLOBAL_DELETE.match(cmd)
     if m:
         return _global_delete(buf, m.group(1))
+
+    m = _GLOBAL_NORMAL.match(cmd)
+    if m:
+        raise SubstituteError(
+            ":g/pat/normal is not supported — use the edit tool instead: "
+            f"at each /{m.group(1)}/ <cmd> (one edit command, applied at "
+            "every match)"
+        )
 
     range_part, s_part = _split_range(cmd)
     m = _SUBST.match(s_part)
@@ -246,7 +255,7 @@ def _substitute(
     buf.dirty = True
 
     head = f"{total} substitution(s) on {len(changed)} line(s)"
-    return head + "\n" + _diff(changed)
+    return head + "\n" + diff_lines(changed)
 
 
 def _global_delete(buf: Buffer, pattern: str) -> str:
@@ -263,7 +272,7 @@ def _global_delete(buf: Buffer, pattern: str) -> str:
     buf.dirty = True
 
     head = f"deleted {len(doomed)} line(s)"
-    return head + "\n" + _diff(doomed)
+    return head + "\n" + diff_lines(doomed)
 
 
 def _yank(
@@ -298,8 +307,9 @@ def _range_delete(
     return head + "\n" + preview(lines)
 
 
-def _diff(changed: list[tuple[int, str, str | None]]) -> str:
+def diff_lines(changed: list[tuple[int, str | None, str | None]]) -> str:
     """Compact diff of changed lines only. Line numbers are pre-edit, 1-based.
+    old None = pure insertion (only the + line), new None = pure deletion.
     Capped: beyond DIFF_CAP changed lines, show the first/last DIFF_EDGE."""
     if len(changed) > DIFF_CAP:
         shown = changed[:DIFF_EDGE] + changed[-DIFF_EDGE:]
@@ -312,7 +322,8 @@ def _diff(changed: list[tuple[int, str, str | None]]) -> str:
     for k, (i, old, new) in enumerate(shown):
         if elided and k == DIFF_EDGE:
             out.append(f"... {elided} more changed line(s) — use matches to inspect ...")
-        out.append(f"- {i + 1:>{width}}  {old}")
+        if old is not None:
+            out.append(f"- {i + 1:>{width}}  {old}")
         if new is not None:
             out.append(f"+ {i + 1:>{width}}  {new}")
     return "\n".join(out)

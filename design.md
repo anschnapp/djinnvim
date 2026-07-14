@@ -29,6 +29,7 @@ Keyhole editing replaces both with:
 ### Design principles
 
 1. **Only use syntax already in the weights.** No novel DSL. Vim motions, text objects, vim-surround, and ex-style substitution are all heavily represented in training data. New *semantics* are fine; alien *surface syntax* is not.
+   **Corollary — false friends are worse than honest English** (made explicit 2026-07-14; it's the line the anchored form already walked): vim spelling is used only where behavior is vim-exact. Wherever we deviate, the surface is plain-English glue (`at /pattern/ ciw foo`, the planned `at each /pattern/`) rather than a vim lookalike — a surface that *looks* like vim but behaves differently makes the model trust its priors over the tool description, and priors then actively generate the inputs we reject (in vim, `:g/pat/normal ciwfoo` is a keystroke stream with no TEXT separator and per-line addressing; a constrained `:g/normal` of ours would break on exactly the most idiomatic input). The weights pay for the *commands*; the addressing glue just has to be readable and described. And when a vim reflex hits a deliberately unsupported surface, the loud error names the supported form (`.` → reissue the anchored edit; `:g/pat/normal` → `at each`), converting the reflex into a signpost instead of a trap.
 2. **No counts, no cursor arithmetic.** LLMs are unreliable at `7j` / `d5k`. Everything is anchored by pattern or by semantic text object. Counted motions are deliberately not implemented.
 3. **Every action echoes a viewport.** Silent state changes are forbidden. Navigation echoes where you landed; edits echo the post-edit region. Write-verification comes free; no separate re-read call needed.
 4. **Global awareness via search visibility, not content.** Keyhole mode is blind to non-local consequences (e.g., 12 other call sites of a renamed function). Compensate with cheap match listings (`/pattern` reports match count; `matches` lists one line per hit), never with full-file dumps.
@@ -222,12 +223,89 @@ label *says so* before any edit → re-anchor on the value → `ciw` changes
 exactly what the label named; punctuation and end-of-line label shapes
 verified as plain multi-line text over real MCP stdio.
 
+## Global anchored edit: `at each` (decided 2026-07-14, v0.8)
+
+The `:g/pat/normal {cmds}` capability question, settled in conversation.
+
+**The gap is narrow but real.** "Do X at every match" splits three ways:
+regex-shaped bulk edits (`:%s//g` covers them), delete-matching-lines
+(`:g/pat/d`), and everything else — where today the idiom is *reissuing
+the identical anchored edit*: search is strictly-after-cursor, so repeating
+`at /pat/ dap` walks the matches one per call with a per-site echo. That
+iterated form is fine (arguably better) at low K; at high K in a big file,
+N round trips for one *structural* edit (text object, surround, `A`/`I`) —
+the class a substitution can't express — is the uncovered cost.
+
+Decisions:
+
+- **Surface: `at each /pattern/ <cmd>` in `edit`**, NOT `:g/pat/normal` —
+  per the false-friend corollary under principle #1. Real vim's `:normal`
+  takes keystroke streams (`ciwfoo`, no TEXT separator) and `:g` addresses
+  per-line; a constrained lookalike would break on exactly the most
+  idiomatic input the weights generate. `at each` is a one-word delta on
+  the anchored form a cold agent already learns.
+- **One edit command from the existing set.** No sequences, no macros
+  (that's the VimGolf-shaped fragility the design rejects). `y`/`p`/`u`
+  and `"name` register prefixes are rejected loudly (yank-at-N-sites has
+  no sane register semantics; paste-at-each deferred until wanted).
+- **Per-MATCH, column-precise** — deliberate deviation from `:g`'s
+  per-line: the cursor lands at each match start, so `ciw`/`ci(` hit the
+  matched site, exactly what `at /pat/` already means. Two matches on one
+  line = two edits.
+- **Bottom-up execution with per-site revalidation:** matches are
+  collected up front and applied last-first, so earlier positions stay
+  valid; before each edit the pattern is re-checked at the recorded
+  position — a match consumed by a previous edit in the batch (two
+  `DEPRECATED` markers in one paragraph under `dap`) is *skipped and
+  reported*, never blindly edited.
+- **Transactional:** if the command fails at any surviving site (`ci(`
+  with no parens on that line), the whole batch rolls back and the error
+  names the site — "failed commands never touch the buffer" extends to
+  batches.
+- **Echo: count + the same compact ±diff `substitute` uses** (renderer
+  shared, extended to render pure insertions), not a viewport. One undo
+  step for the whole batch.
+- **Signpost error** (same pattern as `.`): `:g/pat/normal ...` in
+  `substitute` fails loudly pointing at `at each /pat/ <cmd>` — the vim
+  reflex becomes a redirect, costing one call.
+- **Single file only.** Multi-file batch editing deferred, and
+  deliberately sequenced *behind* cross-file `matches`: the missing
+  multi-file primitive is batch **visibility** (a keyhole-only agent can't
+  even discover which files to touch), not batch editing.
+- **New benchmark task `purge-blocks`** (added to the sweep's task set):
+  remove every function block marked with a `# DEPRECATED` comment —
+  high-K, structural, regex-hostile (`sed '/DEPRECATED/,/^$/d'` leaves a
+  blank-line miscount = silent corruption; awk paragraph mode is the
+  baseline's honest answer). Also lets the iterated anchored form compete
+  against the batch form, so the batch's worth is measured, not assumed.
+- **Evidence gate consciously waived a third time** (registers, undo, now
+  this) — decided in conversation; the benchmark task is the validation.
+  Lands BEFORE the sweep so the one-SHA rule holds.
+
+**v0.8 is implemented and green (2026-07-14):** the global anchored edit,
+as specced above. `at each /pattern/ <cmd>` in `edit` (bottom-up with
+per-site revalidation, transactional rollback naming the failing site,
+skipped-as-consumed reporting, one undo step); echo is the shared compact
+±diff — `substitute._diff` renamed to the public `diff_lines` and extended
+to render pure insertions (`+` line without a `-`), `edit` imports it (no
+cycle: substitute never imports edit). `:g/pat/norm(al)` in `substitute`
+now signposts `at each`. Tool description: one new paragraph in `edit`
+(including the reissue-the-anchored-edit iterated idiom — the `.`
+replacement made explicit to cold agents). New benchmark task
+`purge-blocks` (12 tasks total), generator regression-tested (removal-only,
+dap-safe single-paragraph blocks, two-blank normalization). 264 tests; new
+e2e (`e2e/e2e_each.py`): matches pre-check → `:g//normal` reflex signposted
+→ transactional `ci(` failure leaves the file untouched → batch `dap`
+removes both marked blocks with a plain-text diff echo → one `u` reverts
+the whole batch → redo → write, exact target diff.
+
 **Next session:** ~~(1) build the labeled caret + tests, verify over MCP
-stdio~~ ✅ done 2026-07-14 (v0.7 above); (2) start the v0.6+ benchmark
-re-run — haiku → sonnet → opus, every row version-stamped, one SHA for the
-whole sweep (the labeled caret must land BEFORE trial one; no mid-sweep
-tool changes). Composite and move-multi included — composite is the cell
-that diagnoses whether the rendering fix cures the indentation misses.
+stdio~~ ✅ done 2026-07-14 (v0.7 above); (2) start the benchmark re-run —
+haiku → sonnet → opus, every row version-stamped, one SHA for the whole
+sweep (now v0.8: labeled caret + `at each` + purge-blocks must land BEFORE
+trial one; no mid-sweep tool changes). Composite and move-multi included —
+composite is the cell that diagnoses whether the rendering fix cures the
+indentation misses.
 
 ```
 src/djinnvim/
@@ -256,7 +334,10 @@ src/djinnvim/
                     prefix composes with the anchor in either order; v0.4:
                     `u` undo (restored-region viewport, names the undone
                     command, remaining-step count); v0.6: i/a inserts
-                    (before/after cursor char, anchored = at the match)
+                    (before/after cursor char, anchored = at the match);
+                    v0.8: `at each /pat/ <cmd>` global form (per-match,
+                    bottom-up + revalidation, transactional, diff echo,
+                    one undo step; y/p/u/registers rejected)
   registers.py   ✅ Register dataclass (lines + linewise kind), shared
                     preview/clip/display/missing-register helpers for both
                     surfaces
@@ -268,7 +349,10 @@ src/djinnvim/
                     :RANGE d (no register); :put removed in v0.3 (paste
                     with p/P in edit); v0.5: +N/-N address offsets on
                     patterns, line numbers, $ and .; v0.6: backslash-
-                    punctuation in replacements unescaped vim-style
+                    punctuation in replacements unescaped vim-style;
+                    v0.8: diff renderer public (diff_lines, shared with
+                    edit's at-each; renders pure insertions), :g/pat/norm
+                    signposts `at each`
   session.py     ✅ interface-neutral Session facade (2026-07-10): buffer
                     registry + active buffer + the six operations as
                     string-in/string-out methods; root path sandboxing;
@@ -279,10 +363,10 @@ src/djinnvim/
                     on every tool (plain-text results — the structured
                     {"result": ...} form reached the model JSON-escaped)
                     + descriptions cut to ~half
-tests/           ✅ 242 tests (motion, edit, substitute, registers, undo,
+tests/           ✅ 264 tests (motion, edit, substitute, registers, undo,
                     address offsets, i/a inserts, replacement unescaping,
-                    server round-trips, viewport format + caret labels,
-                    benchmark gen/report)
+                    at-each global edits, server round-trips, viewport
+                    format + caret labels, benchmark gen/report)
 ```
 
 Verified end-to-end over the MCP stdio protocol (scripted client running the
@@ -653,6 +737,8 @@ Perform an editing command at the current cursor position, or at a pattern ancho
 
 **Anchored form (preferred):** `at /pattern/ <command>` — moves to first match after cursor, then applies the command. Optional ordinal: `at 2nd /pattern/ <command>`. This keeps navigate+edit in one call for the common case.
 
+**Global form (v0.8):** `at each /pattern/ <command>` — applies one edit command at *every* match (per match, column-precise; bottom-up; transactional; one undo step). Echoes a substitute-style compact diff instead of a viewport. `y`/`p`/`u` and register prefixes are not allowed here.
+
 Supported commands (count-free normal-mode subset):
 
 | Command | Meaning |
@@ -672,7 +758,6 @@ Supported commands (count-free normal-mode subset):
 | `ysiw{char}` | Surround word (e.g. `ysiw"`) |
 | `J` | Join line with next |
 | `>>` / `<<` | Indent / dedent cursor line |
-| `.` | Repeat last edit at current cursor position |
 | `yy`, `yiw`, `yap`, ... | Yank line / text object into a register (buffer untouched) |
 | `p` / `P` | Paste register: below/above cursor line (linewise), after/at cursor (charwise) |
 | `"name <cmd>` | Register prefix for `y`/`d`/`p`/`P`: `"block yap`, `"block dd` (cut), `"block p`. Word names take a space; single letters also work vim-style (`"ayy`). Bare `y`→unnamed register; bare deletes never touch registers. |
@@ -745,6 +830,18 @@ separate tool; redo stays deferred.
 ## Non-Goals (deliberately excluded)
 
 - **Counted motions** (`3j`, `d5w`) — the known LLM weakness; pattern anchoring replaces them entirely.
+- **`.` repeat (rejected 2026-07-14, moved here from the deferred list).**
+  Its referent is invisible state — "what does `.` currently refer to" lives
+  only in implicit history (murky across failed commands, `u`, intervening
+  yanks/pastes), exactly the state-models-track-poorly category this section
+  exists for. And it buys nothing: search is strictly-after-cursor, so
+  **reissuing the identical anchored edit *is* the dot formula** — one call
+  per site, re-anchored by pattern each time (safer than a blind replay at
+  the cursor), each repeat echoing `(match i of n)`. Vim needs `.` because
+  keystrokes cost humans effort; retyping a short explicit command costs an
+  LLM ~10 tokens and is self-documenting. A cold agent that tries `.` gets
+  the loud supported-commands error, buffer untouched — benign, unlike the
+  undo case that justified waiving the evidence gate for `u`.
 - **Invisible registers, marks, macros, visual mode** — session state that models track poorly. Amended 2026-07-10: *visible* registers (every cut/yank echoes name + content; wrong names dump the full register list) are in-design — see "Registers: cut / yank / put". What stays excluded is register state the agent can't see in the transcript.
 - **A novel command DSL** — everything must look like vim/ex/vim-surround that the model already knows.
 - **Full-file read tool** — intentionally absent to force the keyhole discipline. (Agents can fall back to their native file-read tools if truly needed.)

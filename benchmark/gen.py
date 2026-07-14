@@ -515,6 +515,39 @@ def gen_move_multi(rng: random.Random, size: int) -> Doc:
     return Doc(FILENAME, start, target, prompt)
 
 
+# --- round 3: purge marked blocks (batch-structural, regex-hostile) ---------
+# High-K structural edit with no one-regex answer: variable-length multi-line
+# blocks. `sed '/DEPRECATED/,/^$/d'` leaves a blank-line miscount (silent
+# corruption); the honest baseline answer is awk paragraph mode or a script.
+# Keyhole: `at each /# DEPRECATED/ dap` (batch) or the same anchored edit
+# reissued per block (iterated) — the task lets both forms compete.
+
+def gen_purge_blocks(rng: random.Random, size: int) -> Doc:
+    used: set[str] = set()
+    doomed: list[list[str]] = []
+    for _ in range(_scale(size)):
+        body = _filler(rng, used)
+        alt = _name(rng, used)
+        doomed.append([f"# DEPRECATED: use {alt} instead"] + body)
+
+    body_chunks: list[tuple[list[str], bool]] = [(c, False) for c in doomed]
+    lines = len(_header()) + 2
+    while lines + sum(len(c) + 2 for c, _ in body_chunks) < size:
+        body_chunks.append((_filler(rng, used), True))
+    rng.shuffle(body_chunks)
+    chunks = [(_header(), True)] + body_chunks
+    start = _assemble([c for c, _ in chunks])
+    target = _assemble([c for c, keep in chunks if keep])
+    prompt = (
+        f"In {FILENAME}, several functions are marked deprecated with a "
+        "`# DEPRECATED: ...` comment on the line directly above their def. "
+        "Remove every deprecated function entirely — the comment line and "
+        "the whole function below it. Keep exactly two blank lines between "
+        "the remaining top-level definitions."
+    )
+    return Doc(FILENAME, start, target, prompt)
+
+
 TASKS = {
     "rename": gen_rename,
     "delete-debug": gen_delete_debug,
@@ -527,6 +560,7 @@ TASKS = {
     "quote-trap": gen_quote_trap,
     "composite": gen_composite,
     "move-multi": gen_move_multi,
+    "purge-blocks": gen_purge_blocks,
 }
 
 

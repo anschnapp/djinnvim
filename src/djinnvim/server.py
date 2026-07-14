@@ -49,6 +49,13 @@ def edit(command: str) -> str:
     in `retries(15)`; `at /retries=15/ ciw 60` would change `retries`.
     <cmd> is an edit command, never a motion.
 
+    `at each /pattern/ <cmd>` applies the command at EVERY match (top to
+    bottom, cursor at each match start) and returns a compact ±diff instead
+    of a viewport. One undo step; if the command fails at any site, nothing
+    is changed. Edit commands only (no y/p/u, no registers). To repeat an
+    edit match-by-match instead, reissue the same `at /pattern/ <cmd>` —
+    it anchors on the NEXT match each time.
+
     Commands: ciw/caw TEXT, ci(/{/[/"/' TEXT (di/da delete),
     cip/cap/dip/dap (paragraph), dd, cc TEXT, D, C TEXT, x, r<char>,
     o/O TEXT (line below/above, may be multi-line), A/I TEXT (line
@@ -69,6 +76,7 @@ def edit(command: str) -> str:
 
     Examples:
       edit("at /old_name/ ciw new_name")
+      edit("at each /log_debug\\(/ dd")
       edit("at /def helper/ \\"fn dap")   then   edit("\\"fn p")
       edit("u")
     """

@@ -3,6 +3,9 @@
 Anchored form (preferred): `at /pattern/ <command>` — search, then apply.
 Optional ordinal: `at 2nd /pattern/ <command>` (2nd match after cursor).
 Anchored summaries carry the ambiguity count: `changed line 9 (match 1 of 3)`.
+Global form (v0.8): `at each /pattern/ <command>` — one edit command applied
+at EVERY match (per match, column-precise, bottom-up, transactional, one
+undo step); echoes a substitute-style compact diff instead of a viewport.
 
 Commands: ciw caw  ci( ci{ ci[ ci" ci'  (+ di/da variants)  diw
           cip/cap dip/dap (paragraph)  dd  cc  o O  A I  i a  D C  x r
@@ -10,7 +13,8 @@ Commands: ciw caw  ci( ci{ ci[ ci" ci'  (+ di/da variants)  diw
           yy  y{i,a}{object}  p P  with register prefix `"name <cmd>`
           ("name yap / "name dd cuts / "name p; bare y→unnamed register)
           u (undo — one buffer change per step, crosses writes; no redo)
-Deferred: `.` repeat, cit/dit, J, >> <<
+Rejected: `.` repeat (reissue the same anchored edit — search is strictly
+after the cursor, so it advances match by match). Deferred: cit/dit, J, >> <<
 
 Every edit returns (summary, affected_first, affected_last) so the server
 can render the post-edit viewport; first/last are None when the echo
@@ -18,11 +22,13 @@ already carries the content (yanks, register cuts). Failures raise
 EditError loudly and never modify the buffer or move the cursor.
 """
 
+import difflib
 import re
 
 from . import motion
 from .buffer import Buffer
 from .registers import Register, clip, display, missing, preview
+from .substitute import diff_lines
 
 
 class EditError(Exception):
@@ -30,6 +36,7 @@ class EditError(Exception):
 
 
 _ANCHOR = re.compile(r"^at\s+(?:(\d+)(?:st|nd|rd|th)\s+)?/((?:\\.|[^/])*)/\s*")
+_EACH = re.compile(r"^at\s+each\s+/((?:\\.|[^/])*)/\s*")
 _OBJECT_CMD = re.compile(r"^([cd])([ia])([wWp(){}\[\]\"'`])(?:\s(.*))?$", re.DOTALL)
 _INSERT_CMD = re.compile(r"^(cc|C|o|O|A|I|i|a)(?:\s(.*))?$", re.DOTALL)
 _CS_CMD = re.compile(r"^cs(.)(.)$")
@@ -65,6 +72,20 @@ def execute(
     # Register prefix may come before or after the anchor:
     # `"name at /pat/ yap` and `at /pat/ "name yap` both work.
     reg_name, command = _split_register(command)
+
+    m = _EACH.match(command)
+    if m:
+        if reg_name is not None:
+            raise EditError('"name registers do not compose with at each')
+        try:
+            summary = _each(buf, m.group(1), command[m.end():])
+        except EditError:
+            buf.cursor.line, buf.cursor.col = saved
+            raise
+        if buf.lines != pre_lines:
+            buf.push_undo(pre_lines, saved, original)
+        buf.dirty = True
+        return summary, None, None
 
     anchor_note = ""
     m = _ANCHOR.match(command)
@@ -154,6 +175,76 @@ def _split_register(command: str) -> tuple[str | None, str]:
             'bad register prefix: use "name <cmd> (e.g. "block yap, "block p)'
         )
     return m.group(1), command[m.end():]
+
+
+def _each(buf: Buffer, pattern: str, cmd: str) -> str:
+    """at each /pattern/ <cmd>: one edit command at EVERY match. Per match
+    (column-precise), not per-line like vim's :g. Bottom-up so earlier
+    positions stay valid; each site is revalidated first — a match consumed
+    by a previous edit in the batch is skipped and reported. Transactional:
+    a command failure at any surviving site rolls the whole batch back."""
+    if not cmd:
+        raise EditError("at each needs a command: at each /pattern/ <cmd>")
+    bare = cmd.strip()
+    if (
+        bare == "u"
+        or bare in ("p", "P")
+        or bare.startswith('"')
+        or (_YANK_CMD.match(bare) and not _YSIW_CMD.match(bare))
+    ):
+        raise EditError(
+            "at each takes buffer-changing edit commands only "
+            '(no y/p/u, no "name registers)'
+        )
+    try:
+        hits = motion.find_matches(buf, pattern)
+    except motion.MotionError as e:
+        raise EditError(str(e)) from None
+    if not hits:
+        raise EditError(f"no match: {pattern}")
+    rx = re.compile(pattern)  # find_matches already validated it
+
+    pre_lines = list(buf.lines)
+    applied = 0
+    for line_i, col in reversed(hits):  # bottom-up: edits don't shift earlier sites
+        if line_i >= len(buf.lines) or not rx.match(buf.lines[line_i], col):
+            continue  # consumed by a previous edit in this batch
+        buf.cursor.line, buf.cursor.col = line_i, col
+        try:
+            _apply(buf, cmd)
+        except EditError as e:
+            buf.lines = pre_lines  # transactional: all or nothing
+            raise EditError(
+                f"at each /{pattern}/ failed at the match on line "
+                f"{line_i + 1}: {e} — no changes applied"
+            ) from None
+        applied += 1
+
+    skipped = len(hits) - applied
+    if skipped:
+        head = (
+            f"edited {applied} of {len(hits)} match(es) "
+            f"({skipped} consumed by earlier edits in this batch)"
+        )
+    else:
+        head = f"edited {applied} match(es)"
+    return head + "\n" + _each_diff(pre_lines, buf.lines)
+
+
+def _each_diff(pre: list[str], post: list[str]) -> str:
+    """Substitute-style compact ±diff (pre-edit line numbers) of the batch."""
+    changed: list[tuple[int, str | None, str | None]] = []
+    sm = difflib.SequenceMatcher(None, pre, post, autojunk=False)
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == "equal":
+            continue
+        news = post[j1:j2]
+        for k in range(max(i2 - i1, len(news))):
+            line_no = min(i1 + k, max(i2 - 1, i1))
+            old = pre[i1 + k] if i1 + k < i2 else None
+            new = news[k] if k < len(news) else None
+            changed.append((line_no, old, new))
+    return diff_lines(changed)
 
 
 def _dispatch(
