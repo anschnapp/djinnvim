@@ -99,12 +99,15 @@ def run_trial(task: str, size: int, model: str, condition: str, trial: int,
 
     tool_calls: Counter[str] = Counter()
     result_event: dict = {}
+    model_id = None
     for line in proc.stdout.splitlines():
         try:
             ev = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if ev.get("type") == "assistant":
+        if ev.get("type") == "system" and ev.get("subtype") == "init":
+            model_id = ev.get("model")
+        elif ev.get("type") == "assistant":
             for block in ev.get("message", {}).get("content", []):
                 if block.get("type") == "tool_use":
                     tool_calls[block.get("name", "?")] += 1
@@ -121,6 +124,7 @@ def run_trial(task: str, size: int, model: str, condition: str, trial: int,
     record = {
         "task": task, "size": size, "model": model, "condition": condition,
         "trial": trial,
+        "model_id": model_id,
         "djinnvim_version": REPO_VERSION,
         "exact_match": exact,
         "cost_usd": result_event.get("total_cost_usd"),
