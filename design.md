@@ -1185,6 +1185,42 @@ Open questions from the rethink, settled in conversation:
 - Layout: `benchmark/` (generator, tasks, runner, report) — separate from
   `src/`, not part of the installed package.
 
+### Sweep scope revisions (decided 2026-07-15)
+
+Two decisions, settled in conversation while the sonnet round ran:
+
+- **Full opus round dropped.** Sonnet 5 sits close enough to opus-class
+  that the top rung of the haiku → sonnet → opus ladder is nearly
+  redundant, and an opus sweep burns the usage limit several times over
+  for a result the sonnet data already sketches: near-parity on
+  correctness with a lean toward worse for keyhole (sonnet keyhole missed
+  3 cells, baseline 1), comparable cost. Writeup framing adopted now:
+  **keyhole pays off on cheaper models; at the frontier it's near parity
+  with a hang to worse.** An opus *spot-check* on the discriminating
+  cells only (composite@2000/@10000, quote-trap@10000, ~12 trials)
+  remains open as the cheap defense against "you skipped the strongest
+  model" — decision deferred until the sonnet round and the grader
+  question are settled.
+- **Third condition `no-bash`** — the locked-down baseline: stock native
+  tools minus shell execution (`--disallowedTools
+  Bash,BashOutput,KillShell,Task`, still `bypassPermissions`). This is
+  the measured version of the permission-management argument (see that
+  section): the strong baseline's power is almost entirely grep+sed via
+  Bash (232 of 398 baseline tool calls across all result rows to date
+  were Bash), and Bash is exactly what a cautious user denies. If
+  keyhole beats the no-bash baseline where it only ties the full one,
+  djinnvim's case broadens from "token economy" to "the editing
+  capability you get back when you lock the agent down." Containment
+  verified against real transcripts: Bash is Claude Code's only exec
+  tool (baseline trials used exactly Bash/Edit/Read/Write, nothing
+  else); MCP bypass is impossible (`--strict-mcp-config` with no
+  `--mcp-config` loads zero servers); `Task` is disallowed so a
+  subagent can't reintroduce Bash. Planned cells: haiku + sonnet first
+  (where the sonnet keyhole-vs-baseline comparison already exists to
+  anchor against). Prompt is the baseline preamble unchanged — the
+  model simply doesn't see the tools, like a real denied-permission
+  session.
+
 ### Original plan
 
 Benchmark keyhole sessions against the read-whole-file-then-edit baseline:

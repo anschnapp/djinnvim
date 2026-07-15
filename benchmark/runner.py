@@ -42,6 +42,20 @@ def _repo_version() -> str:
 
 REPO_VERSION = _repo_version()
 
+
+def _claude_version() -> str:
+    """Version of the claude CLI harness — it changes behavior (tool
+    deferral, system prompt) independently of model and tool, so reused
+    rows are only comparable if this matches."""
+    try:
+        return subprocess.run(["claude", "--version"], capture_output=True,
+                              text=True).stdout.strip() or "unknown"
+    except OSError:
+        return "unknown"
+
+
+CLAUDE_VERSION = _claude_version()
+
 DJINNVIM_TOOLS = ["open", "motion", "edit", "substitute", "matches", "write"]
 
 PREAMBLE_KEYHOLE = (
@@ -75,6 +89,15 @@ def build_cmd(condition: str, model: str, prompt: str, workdir: Path,
                 "WebFetch,WebSearch,Task"]
     elif condition == "baseline":
         cmd += ["--permission-mode", "bypassPermissions"]
+    elif condition == "no-bash":
+        # Locked-down baseline: native file tools stay, shell execution goes
+        # — the configuration of a user who denies the Bash permission (see
+        # design.md, "The permission-management argument"). Bash is the only
+        # exec tool; Task is disallowed so a subagent can't reintroduce it,
+        # BashOutput/KillShell are its companions. MCP bypass is impossible:
+        # --strict-mcp-config with no --mcp-config loads zero servers.
+        cmd += ["--permission-mode", "bypassPermissions",
+                "--disallowedTools", "Bash,BashOutput,KillShell,Task"]
     else:
         raise ValueError(condition)
     return cmd
@@ -100,6 +123,7 @@ def run_trial(task: str, size: int, model: str, condition: str, trial: int,
     tool_calls: Counter[str] = Counter()
     result_event: dict = {}
     model_id = None
+    cli_version = CLAUDE_VERSION
     for line in proc.stdout.splitlines():
         try:
             ev = json.loads(line)
@@ -107,6 +131,7 @@ def run_trial(task: str, size: int, model: str, condition: str, trial: int,
             continue
         if ev.get("type") == "system" and ev.get("subtype") == "init":
             model_id = ev.get("model")
+            cli_version = ev.get("claude_code_version") or cli_version
         elif ev.get("type") == "assistant":
             for block in ev.get("message", {}).get("content", []):
                 if block.get("type") == "tool_use":
@@ -126,6 +151,7 @@ def run_trial(task: str, size: int, model: str, condition: str, trial: int,
         "trial": trial,
         "model_id": model_id,
         "djinnvim_version": REPO_VERSION,
+        "claude_cli_version": cli_version,
         "exact_match": exact,
         "cost_usd": result_event.get("total_cost_usd"),
         "input_tokens": usage.get("input_tokens"),
@@ -168,7 +194,8 @@ def main() -> None:
     ap.add_argument("--tasks", default=",".join(TASKS))
     ap.add_argument("--sizes", default="100,500,2000,10000")
     ap.add_argument("--models", default="opus,fable")
-    ap.add_argument("--conditions", default="keyhole,baseline")
+    ap.add_argument("--conditions", default="keyhole,baseline",
+                    help="comma list of: keyhole, baseline, no-bash")
     ap.add_argument("--trials", type=int, default=5)
     ap.add_argument("--budget", type=float, default=3.0,
                     help="per-trial --max-budget-usd cap")
