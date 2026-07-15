@@ -52,6 +52,62 @@ the agent can still read anything under the root via viewports, just slowly.
 The benchmark's keyhole condition (all native file/shell tools disallowed)
 doubles as evidence for this claim: it *is* the locked-down configuration.
 
+### What this is and isn't: ed's discipline, vim's vocabulary (framed 2026-07-15; README candidate)
+
+Settled in conversation after the honest objection "no vim user would work
+like this — vim users compose long sequences, and LLMs could take one big
+regex shot instead." Both halves of the objection are true; neither changes
+the design. Recording why, because the framing is the answer:
+
+- **This is not vim, and shouldn't claim vim's economy.** Vim optimizes
+  keystroke count under *free feedback* — the screen is always there,
+  updated instantly, so a human can afford long compositions and macros.
+  For an LLM the economics are exactly inverted: emitting tokens is cheap,
+  but every glance at the buffer costs a full round trip. A tool that
+  faithfully reproduced vim's design point for agents would let them fire
+  long keystroke sequences blind — precisely what this design rejects.
+- **The true ancestor is ed/ex.** Pattern addressing, one command per
+  call, terse echoes — ed's discipline existed because *its* feedback was
+  expensive (a paper teletype). The LLM's constraint profile matches the
+  teletype era, not the screen era. Vim is the *vocabulary donor* (text
+  objects, surround — the genuinely vim-native additions ed never had,
+  and the syntax dense in the weights); ed is the ancestor. "No vim user
+  would work like this" is accepted: the agent isn't a vim user, it's a
+  blind editor operator paying per glance — design for that user.
+- **Declarative big shots stay open; imperative big shots stay closed.**
+  LLMs genuinely are good at large complex regexes, and that lane exists:
+  `substitute` takes arbitrary Python regex, groups, ranges, offsets —
+  nothing stops the model from taking the big shot. But a regex is
+  *declarative* (one pattern → one transformation, no intermediate state),
+  while a keystroke *sequence* is *imperative*: the model must simulate
+  the buffer state after each command to compose the next one, blind —
+  the same weakness class as counting. That distinction, not regex
+  skepticism, is why one-command-per-call holds and sequences/macros are
+  rejected (see Non-Goals). The evidence so far says big shots are exactly
+  where silent errors live: the composite escape leak (`load_records\(`
+  written silently by one clever `:%s//g`), haiku's six blank-miscounting
+  range deletes, the baseline's 6/36 silent trap failures — all big-shot
+  regex or sed.
+- **The one-command limit does NOT multiply `at each` cost.** The
+  multiplication over *sites* is already gone (one call for N matches);
+  the limit only multiplies over *commands*: a per-site transformation
+  needing `ciw` then `cs"'` is two `at each` calls, not 2N — each pass
+  transactional, each echoing its own diff before the next compounds on
+  it. A 3-command refactor at 50 sites costs 3 calls instead of 1; the
+  restriction's total price is C−1 calls, bought back as a diff between
+  every pass. Honest residual gap: pass 2 must re-anchor on the
+  *post-pass-1* text, occasionally awkward to pattern-match. If that
+  bites in practice, the surgical concession is a short sequence inside
+  `at each` only (where per-site viewports are already traded for a
+  diff), still transactional — parked behind the evidence gate; no
+  current benchmark task needs it.
+- **README consequence:** the pitch is not "vim for AIs" — that framing
+  invites exactly this objection, since real vim is sequences and macros.
+  It's "ed's discipline with vim's vocabulary, because an agent's
+  feedback channel costs what a teletype cost." The benchmark's baseline
+  condition is literally the alternative hypothesis (let the model take
+  big sed/regex shots); the silent-error column is the measured answer.
+
 ### Design principles
 
 1. **Only use syntax already in the weights.** No novel DSL. Vim motions, text objects, vim-surround, and ex-style substitution are all heavily represented in training data. New *semantics* are fine; alien *surface syntax* is not.
@@ -989,7 +1045,7 @@ separate tool; redo stays deferred.
   LLM ~10 tokens and is self-documenting. A cold agent that tries `.` gets
   the loud supported-commands error, buffer untouched — benign, unlike the
   undo case that justified waiving the evidence gate for `u`.
-- **Invisible registers, marks, macros, visual mode** — session state that models track poorly. Amended 2026-07-10: *visible* registers (every cut/yank echoes name + content; wrong names dump the full register list) are in-design — see "Registers: cut / yank / put". What stays excluded is register state the agent can't see in the transcript.
+- **Invisible registers, marks, macros, visual mode** — session state that models track poorly. For macros/sequences specifically, the deeper reason is the declarative/imperative line drawn in "What this is and isn't" above: composing a sequence means simulating intermediate buffer state blind. Amended 2026-07-10: *visible* registers (every cut/yank echoes name + content; wrong names dump the full register list) are in-design — see "Registers: cut / yank / put". What stays excluded is register state the agent can't see in the transcript.
 - **A novel command DSL** — everything must look like vim/ex/vim-surround that the model already knows.
 - **Full-file read tool** — intentionally absent to force the keyhole discipline. (Agents can fall back to their native file-read tools if truly needed.)
 
