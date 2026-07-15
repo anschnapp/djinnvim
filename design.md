@@ -26,6 +26,32 @@ Keyhole editing replaces both with:
 - **Compact edit commands** (`ciw`, `dap`, `cs"'`) drawn from vim's count-free normal-mode subset, which is small, compositional, semantic, and deeply represented in LLM training data.
 - **Viewport echoes:** every cursor-moving or editing command returns a small viewport (default: 2 lines above, cursor line, 2 lines below). The tool result *is* the screen. Errors become visible immediately instead of silently corrupting the file.
 
+### The permission-management argument (added 2026-07-14; README candidate)
+
+There is a second audience beyond token economy: users who run agents under
+restrictive permissions. The strong baseline's editing power comes almost
+entirely from Bash (`grep`+`sed`) — exactly the permission a cautious user
+denies, since it's arbitrary command execution (and shell allowlisting is
+leaky: `sed` allowed "for editing" can execute commands via its `e` flag).
+Denying Bash today means losing powerful search (`grep`) and bulk
+search-replace (`sed`) entirely. djinnvim gives that class of capability
+back through a narrowly scoped multi-tool: `matches` is the grep, `substitute`
+/ `at each` are the sed — with a containment story `sed -i` can't offer:
+
+- `DJINNVIM_ROOT` sandboxing — every path validated against the root.
+- Nothing touches disk until `write`; the buffer is a natural review point,
+  plus undo, staleness checks, and echo discipline.
+- Per-tool permission granularity: a client can allow read-only exploration
+  (`open`/`motion`/`matches`) while gating `edit`/`substitute`/`write`.
+
+Scope of the claim, stated honestly: this compensates for the *editing and
+search* disadvantage of denying shell access, not the whole disadvantage
+(a Bash-less agent still can't run tests, git, or builds). And the strong
+angle is write-side blast radius and auditability, not confidentiality —
+the agent can still read anything under the root via viewports, just slowly.
+The benchmark's keyhole condition (all native file/shell tools disallowed)
+doubles as evidence for this claim: it *is* the locked-down configuration.
+
 ### Design principles
 
 1. **Only use syntax already in the weights.** No novel DSL. Vim motions, text objects, vim-surround, and ex-style substitution are all heavily represented in training data. New *semantics* are fine; alien *surface syntax* is not.
