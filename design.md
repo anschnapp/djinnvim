@@ -1221,6 +1221,69 @@ Two decisions, settled in conversation while the sonnet round ran:
   model simply doesn't see the tools, like a real denied-permission
   session.
 
+### Sweep results so far (recorded 2026-07-16)
+
+**Sonnet round complete** (all 7 round-2 tasks × 500/2000/10000 × 3 trials,
+both conditions, committed `f7a500d`). Clean scores — session-limit aborts
+are flagged `aborted: true` in the JSONL and must be excluded (4 exist
+file-wide; keep the rows, filter on the flag):
+
+- keyhole **61/63** — only misses: composite@2000, composite@10000, both
+  suspected instances of the known grader-strictness artifact (exact-match
+  grader fails formatting-only divergence the prompt never specifies).
+- baseline **61/63** — misses: quote-trap@10000, purge-blocks@500, both
+  *real* silent errors.
+
+**Framing correction pending the grader decision:** the 2026-07-15 "near
+parity with a hang to worse at the frontier" line was computed with an
+abort counted as a keyhole miss. If the two composite misses are confirmed
+AST-identical formatting divergence (as haiku's were), sonnet keyhole is
+semantically 63/63 vs baseline's 2 silent errors — *ahead* at the
+frontier, not behind. Caveat: the sonnet round kept no workdirs, so the
+composite output files are gone; confirming means re-running those cells
+with `--workdirs` or AST-normalizing the grader and re-grading… which
+needs the outputs. Practical path: re-run composite sonnet keyhole
+@2000/@10000 (~4 trials) with workdirs kept.
+
+**Haiku no-bash round complete** (21 cells × 2 trials, 2026-07-16, user's
+launch; one composite@2000 abort + re-run). Score **34/42** vs old haiku
+round's baseline 36/40, keyhole 37/40 (keyhole misses were the composite
+formatting artifact; its trap-task silent errors were 0). The no-bash
+story splits cleanly by task shape:
+
+- **One-regex trap tasks (rename/bump/delete/quote-trap partially):
+  no-bash is *fine* — 16/16 on rename/bump/delete-trap**, including the
+  two cells where the full baseline silently sed-corrupted
+  (rename-trap@500, delete-trap@2000). Without sed the model grinds
+  through per-site Edit calls and the decoys don't bite. The old
+  baseline's silent errors were a *sed* problem, not a tooling-gap
+  problem — the same "big blind shots are where silent errors live"
+  claim from the ed-discipline section, measured from another angle.
+- **Structural / file-wide tasks are where it breaks: all 8 misses are
+  quote-trap (2), composite (3), purge-blocks (3)**, ~6 of them silent
+  (claimed success). purge-blocks@10000 went 0/2.
+- **Cost tracks baseline's growth curve, then blows past it at size:**
+  delete-trap@10000 $1.05, composite@10000 $1.13, purge-blocks@10000
+  $0.89 — 10–20× keyhole's flat ~$0.05–0.08.
+
+Net for the permission-management argument: denying Bash costs the
+baseline correctness on exactly the structural/file-wide tasks *and*
+10–20× cost at size, while keyhole is unaffected by the lockdown — the
+claim holds, but the honest version is task-shaped, not blanket.
+
+Cross-round caveats: no-bash ran 2 trials/cell vs 3; the haiku
+keyhole/baseline round predates CLI-version stamping (no-bash rows are
+CLI 2.1.211, sonnet 2.1.210) and the older CLI surfaced native tools
+slightly differently (Glob/Grep absent from its init tool list).
+no-bash containment was smoke-verified before the round: init event
+shows Bash/BashOutput/KillShell/Task(+Output/Stop) absent, zero MCP
+servers.
+
+Still open: sonnet no-bash round; the composite grader decision
+(AST-normalize vs report-as-is vs both columns) — now load-bearing for
+the frontier framing, decide before the writeup; optional opus
+spot-check; haiku n=2 → n=3 top-ups.
+
 ### Original plan
 
 Benchmark keyhole sessions against the read-whole-file-then-edit baseline:
