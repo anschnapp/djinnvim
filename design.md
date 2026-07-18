@@ -1279,10 +1279,77 @@ no-bash containment was smoke-verified before the round: init event
 shows Bash/BashOutput/KillShell/Task(+Output/Stop) absent, zero MCP
 servers.
 
-Still open: sonnet no-bash round; the composite grader decision
-(AST-normalize vs report-as-is vs both columns) — now load-bearing for
-the frontier framing, decide before the writeup; optional opus
-spot-check; haiku n=2 → n=3 top-ups.
+**Sonnet no-bash round complete (2026-07-18) — and the sweep is closed.**
+7 tasks × 3 sizes × 3 trials; 67 rows (7 aborted, excluded), stamped
+`9a638a5[-dirty]`. Clean score: **60/60 exact-match on every completed
+cell** — the frontier model makes *zero* correctness errors without Bash,
+unlike haiku no-bash (34/42). The lockdown cost shows up elsewhere:
+
+- **Cost climbs with size instead of staying flat:** no-bash mean
+  $0.21 / $0.56 / $0.83 at 500/2000/10000 lines, vs sonnet keyhole's
+  flat $0.34 / $0.33 / $0.34 and the full (Bash-armed) baseline's
+  $0.21 / $0.28 / $0.39. At 10000 lines no-bash runs ~2.5× keyhole's
+  mean and its worst trials reach $1.8.
+- **purge-blocks@10000 is a hard wall: zero clean trials.** All 5
+  attempts aborted at the session limit after burning $1.95–$3.50
+  each (one had actually reached the exact target before aborting) —
+  grinding a high-K structural edit through per-site Edit calls at
+  size simply doesn't fit in a session. Same cell for comparison:
+  keyhole $0.33–0.46 clean 3/3, full baseline ~$0.36 clean 3/3.
+- The two remaining aborts (quote-trap@10000, move-multi@500) are
+  ordinary session-limit noise, not task-shaped.
+
+Net permission-management claim, now measured at both ends of the model
+ladder: **deny Bash to a cheap model and correctness collapses on
+structural/file-wide tasks (haiku: 8 misses, ~6 silent); deny it to a
+frontier model and correctness holds but cost grows with file size and
+hits a hard session-limit wall on the structural high-K task — while
+keyhole is unaffected by the lockdown at either tier.** Honest caveat
+unchanged from the sonnet round: at 500 lines the full baseline is
+cheaper than keyhole ($0.21 vs $0.34) — keyhole's win is the flat curve
+and the lockdown story, not small-file economy.
+
+**Sweep concluded (decided 2026-07-18): no opus round, no opus
+spot-check.** The runs are slow and costly, and the existing grid
+(haiku/sonnet × keyhole/baseline/no-bash × 3 sizes × 7 tasks) already
+carries the reason-for-existence claims: silent-error rate under big
+blind shots, flat cost-vs-size, and the task-shaped lockdown story.
+Haiku n=2 → n=3 top-ups also dropped.
+
+Still open from the benchmark phase: **the composite grader decision
+only** (AST-normalize vs report-as-is vs both columns) — load-bearing
+for the frontier framing (sonnet keyhole may be semantically 63/63,
+ahead of baseline's 61/63, not behind); settling it means re-running
+composite sonnet keyhole @2000/@10000 (~4 trials) with `--workdirs`
+since the original outputs were discarded. That mini-re-run is the one
+benchmark expenditure still on the table; decide before the writeup.
+
+### Post-sweep queue (recorded 2026-07-18)
+
+1. **Bug, confirmed live, next session:** `motion`'s search status
+   reports `match 1 of 1` even when multiple matches exist (user
+   repro'd manually; `matches` lists several hits, `/pattern` claims
+   1 of 1). Echo-discipline critical — the `match i of n` count is
+   what principle #4 leans on for ambiguity awareness, and dogfoods
+   #1–#3 credited it with catching decoys. A debugging breadcrumb
+   (`ohits` + todo comment) is parked in `motion.py`; write a failing
+   repro first, then fix.
+2. **Discussion point, not yet decided: root confinement hardening.**
+   Goal: djinnvim must operate on the correct project workdir and be
+   unable to read/edit anything outside it — same containment posture
+   as Claude Code's native Edit tool. Current state: `Session`
+   resolves every path and rejects those not under the root
+   (`session.py`); root = `DJINNVIM_ROOT` env var, **falling back to
+   the server process's cwd**. Questions to settle in conversation:
+   is the cwd fallback the right default for real MCP-client use
+   (Claude Code spawns stdio servers with the project dir as cwd —
+   but other clients may not, and a wrong cwd silently widens the
+   sandbox to wherever the server happened to start); should the
+   fallback be removed (require explicit `DJINNVIM_ROOT`, fail loudly
+   without it) or announced (root stated in every `open` echo);
+   symlink/TOCTOU review (`.resolve()` before the `is_relative_to`
+   check handles symlink escapes — verify with tests, including a
+   symlink *inside* the root pointing outside).
 
 ### Original plan
 
