@@ -1291,11 +1291,15 @@ unlike haiku no-bash (34/42). The lockdown cost shows up elsewhere:
   $0.21 / $0.28 / $0.39. At 10000 lines no-bash runs ~2.5× keyhole's
   mean and its worst trials reach $1.8.
 - **purge-blocks@10000 is a hard wall: zero clean trials.** All 5
-  attempts aborted at the session limit after burning $1.95–$3.50
-  each (one had actually reached the exact target before aborting) —
-  grinding a high-K structural edit through per-site Edit calls at
-  size simply doesn't fit in a session. Same cell for comparison:
-  keyhole $0.33–0.46 clean 3/3, full baseline ~$0.36 clean 3/3.
+  attempts aborted — 4 hit the runner's default $3 per-trial budget
+  cap (`error_max_budget_usd`, $3.13–$3.50 spent; one of those had
+  actually reached the exact target before the cap), 1 hit the
+  session limit at $1.95. (Correction 2026-07-18: originally recorded
+  as all session-limit.) Grinding a high-K structural edit through
+  per-site Edit calls at size costs ≥8× keyhole; whether it *can*
+  finish under a raised cap is untested — re-run with `--budget 8`
+  if a clean number is wanted. Same cell for comparison: keyhole
+  $0.33–0.46 clean 3/3, full baseline ~$0.36 clean 3/3.
 - The two remaining aborts (quote-trap@10000, move-multi@500) are
   ordinary session-limit noise, not task-shaped.
 
@@ -1303,7 +1307,7 @@ Net permission-management claim, now measured at both ends of the model
 ladder: **deny Bash to a cheap model and correctness collapses on
 structural/file-wide tasks (haiku: 8 misses, ~6 silent); deny it to a
 frontier model and correctness holds but cost grows with file size and
-hits a hard session-limit wall on the structural high-K task — while
+blows through a $3 per-trial budget on the structural high-K task — while
 keyhole is unaffected by the lockdown at either tier.** Honest caveat
 unchanged from the sonnet round: at 500 lines the full baseline is
 cheaper than keyhole ($0.21 vs $0.34) — keyhole's win is the flat curve
