@@ -160,7 +160,244 @@
 </div>
 
 <script>
-const DATA = {"haiku":{"baseline":{"bump-trap":{"500":[{"cost":0.036,"exact":true,"calls":3},{"cost":0.054,"exact":true,"calls":4},{"cost":0.037,"exact":true,"calls":3}],"2000":[{"cost":0.052,"exact":true,"calls":5},{"cost":0.059,"exact":true,"calls":7},{"cost":0.071,"exact":true,"calls":3}],"10000":[{"cost":0.12,"exact":true,"calls":6},{"cost":0.106,"exact":true,"calls":5},{"cost":0.106,"exact":true,"calls":5}]},"composite":{"500":[{"cost":0.147,"exact":true,"calls":23},{"cost":0.144,"exact":true,"calls":22},{"cost":0.117,"exact":true,"calls":17}],"2000":[{"cost":0.433,"exact":true,"calls":54},{"cost":0.429,"exact":true,"calls":55},{"cost":0.428,"exact":true,"calls":53}],"10000":[{"cost":0.327,"exact":false,"calls":32},{"cost":0.285,"exact":true,"calls":25},{"cost":0.328,"exact":false,"calls":31}]},"delete-trap":{"500":[{"cost":0.051,"exact":true,"calls":6},{"cost":0.05,"exact":true,"calls":6},{"cost":0.05,"exact":true,"calls":6}],"2000":[{"cost":0.156,"exact":false,"calls":10},{"cost":0.168,"exact":true,"calls":19},{"cost":0.167,"exact":true,"calls":19}],"10000":[{"cost":0.147,"exact":true,"calls":9},{"cost":0.117,"exact":true,"calls":7},{"cost":0.146,"exact":true,"calls":11}]},"move-multi":{"500":[{"cost":0.081,"exact":true,"calls":6},{"cost":0.1,"exact":true,"calls":5},{"cost":0.07,"exact":true,"calls":6}],"2000":[{"cost":0.164,"exact":false,"calls":5},{"cost":0.111,"exact":true,"calls":6},{"cost":0.131,"exact":true,"calls":8}],"10000":[{"cost":0.216,"exact":true,"calls":18},{"cost":0.23,"exact":true,"calls":20},{"cost":0.175,"exact":true,"calls":14}]},"purge-blocks":{"500":[{"cost":0.075,"exact":true,"calls":9},{"cost":0.123,"exact":false,"calls":17}],"2000":[{"cost":0.258,"exact":true,"calls":34},{"cost":0.264,"exact":true,"calls":32},{"cost":0.208,"exact":true,"calls":18}],"10000":[{"cost":0.148,"exact":true,"calls":10},{"cost":0.216,"exact":false,"calls":16},{"cost":0.154,"exact":true,"calls":10}]},"quote-trap":{"500":[{"cost":0.084,"exact":true,"calls":10},{"cost":0.055,"exact":false,"calls":4},{"cost":0.155,"exact":true,"calls":11}],"2000":[{"cost":0.206,"exact":true,"calls":26},{"cost":0.237,"exact":true,"calls":31},{"cost":0.08,"exact":true,"calls":4}],"10000":[{"cost":0.104,"exact":true,"calls":4},{"cost":0.106,"exact":false,"calls":4},{"cost":0.106,"exact":true,"calls":4}]},"rename-trap":{"500":[{"cost":0.048,"exact":true,"calls":5},{"cost":0.065,"exact":true,"calls":8},{"cost":0.042,"exact":false,"calls":4}],"2000":[{"cost":0.076,"exact":true,"calls":4},{"cost":0.095,"exact":true,"calls":6},{"cost":0.199,"exact":true,"calls":23}],"10000":[{"cost":0.161,"exact":true,"calls":11},{"cost":0.112,"exact":true,"calls":5},{"cost":0.073,"exact":true,"calls":8}]}},"keyhole":{"bump-trap":{"500":[{"cost":0.065,"exact":true,"calls":13},{"cost":0.069,"exact":true,"calls":16},{"cost":0.042,"exact":true,"calls":8}],"2000":[{"cost":0.05,"exact":true,"calls":12},{"cost":0.044,"exact":true,"calls":8},{"cost":0.043,"exact":true,"calls":9}],"10000":[{"cost":0.054,"exact":true,"calls":10},{"cost":0.052,"exact":true,"calls":9},{"cost":0.043,"exact":true,"calls":9}]},"composite":{"500":[{"cost":0.308,"exact":true,"calls":71},{"cost":0.151,"exact":false,"calls":40},{"cost":0.374,"exact":true,"calls":95}],"2000":[{"cost":0.234,"exact":false,"calls":66},{"cost":0.16,"exact":false,"calls":45},{"cost":0.134,"exact":false,"calls":30}],"10000":[{"cost":0.199,"exact":false,"calls":43},{"cost":0.154,"exact":false,"calls":30},{"cost":0.197,"exact":false,"calls":41}]},"delete-trap":{"500":[{"cost":0.044,"exact":true,"calls":9},{"cost":0.048,"exact":true,"calls":9},{"cost":0.039,"exact":true,"calls":6}],"2000":[{"cost":0.039,"exact":true,"calls":6},{"cost":0.04,"exact":true,"calls":6},{"cost":0.049,"exact":true,"calls":9}],"10000":[{"cost":0.077,"exact":true,"calls":15},{"cost":0.047,"exact":true,"calls":8},{"cost":0.046,"exact":true,"calls":7}]},"move-multi":{"500":[{"cost":0.388,"exact":false,"calls":77},{"cost":0.243,"exact":false,"calls":59},{"cost":0.203,"exact":false,"calls":49}],"2000":[{"cost":0.276,"exact":true,"calls":62},{"cost":0.325,"exact":false,"calls":79},{"cost":0.136,"exact":true,"calls":35}],"10000":[{"cost":0.276,"exact":false,"calls":48},{"cost":0.42,"exact":true,"calls":99},{"cost":0.127,"exact":false,"calls":29}]},"purge-blocks":{"500":[{"cost":0.094,"exact":true,"calls":21},{"cost":0.072,"exact":true,"calls":15}],"2000":[{"cost":0.064,"exact":true,"calls":11},{"cost":0.083,"exact":true,"calls":19},{"cost":0.107,"exact":true,"calls":20}],"10000":[{"cost":0.095,"exact":true,"calls":18},{"cost":0.091,"exact":true,"calls":18},{"cost":0.129,"exact":true,"calls":25}]},"quote-trap":{"500":[{"cost":0.036,"exact":true,"calls":5},{"cost":0.041,"exact":true,"calls":5},{"cost":0.035,"exact":true,"calls":5}],"2000":[{"cost":0.039,"exact":true,"calls":5},{"cost":0.052,"exact":true,"calls":7},{"cost":0.039,"exact":true,"calls":5}],"10000":[{"cost":0.04,"exact":true,"calls":5},{"cost":0.054,"exact":true,"calls":7},{"cost":0.039,"exact":true,"calls":5}]},"rename-trap":{"500":[{"cost":0.042,"exact":true,"calls":6},{"cost":0.037,"exact":true,"calls":5},{"cost":0.039,"exact":true,"calls":5}],"2000":[{"cost":0.041,"exact":true,"calls":5},{"cost":0.043,"exact":true,"calls":6},{"cost":0.042,"exact":true,"calls":5}],"10000":[{"cost":0.038,"exact":true,"calls":5},{"cost":0.043,"exact":true,"calls":5},{"cost":0.041,"exact":true,"calls":5}]}},"no-bash":{"bump-trap":{"500":[{"cost":0.032,"exact":true,"calls":3},{"cost":0.033,"exact":true,"calls":3},{"cost":0.036,"exact":true,"calls":3}],"2000":[{"cost":0.063,"exact":true,"calls":3},{"cost":0.062,"exact":true,"calls":3},{"cost":0.067,"exact":true,"calls":3}],"10000":[{"cost":0.101,"exact":true,"calls":5},{"cost":0.108,"exact":true,"calls":6},{"cost":0.105,"exact":true,"calls":5}]},"composite":{"500":[{"cost":0.126,"exact":true,"calls":22},{"cost":0.096,"exact":true,"calls":17},{"cost":0.104,"exact":true,"calls":17}],"2000":[{"cost":0.357,"exact":false,"calls":49},{"cost":0.404,"exact":true,"calls":54},{"cost":0.425,"exact":true,"calls":54}],"10000":[{"cost":1.048,"exact":false,"calls":119},{"cost":1.203,"exact":true,"calls":231},{"cost":1.482,"exact":true,"calls":107}]},"delete-trap":{"500":[{"cost":0.045,"exact":true,"calls":6},{"cost":0.044,"exact":true,"calls":6},{"cost":0.049,"exact":true,"calls":6}],"2000":[{"cost":0.152,"exact":true,"calls":18},{"cost":0.15,"exact":true,"calls":19},{"cost":0.164,"exact":true,"calls":19}],"10000":[{"cost":1.258,"exact":true,"calls":149},{"cost":0.85,"exact":true,"calls":135},{"cost":1.208,"exact":true,"calls":114}]},"move-multi":{"500":[{"cost":0.087,"exact":true,"calls":7},{"cost":0.059,"exact":true,"calls":5},{"cost":0.081,"exact":true,"calls":6}],"2000":[{"cost":0.155,"exact":true,"calls":5},{"cost":0.112,"exact":true,"calls":8},{"cost":0.123,"exact":true,"calls":9}],"10000":[{"cost":0.197,"exact":true,"calls":19},{"cost":0.173,"exact":true,"calls":19},{"cost":0.26,"exact":true,"calls":22}]},"purge-blocks":{"500":[{"cost":0.098,"exact":true,"calls":9},{"cost":0.066,"exact":false,"calls":9},{"cost":0.076,"exact":true,"calls":10}],"2000":[{"cost":0.23,"exact":true,"calls":30},{"cost":0.239,"exact":true,"calls":33},{"cost":0.246,"exact":true,"calls":31}],"10000":[{"cost":0.894,"exact":false,"calls":38},{"cost":0.877,"exact":false,"calls":68},{"cost":1.049,"exact":false,"calls":50}]},"quote-trap":{"500":[{"cost":0.094,"exact":true,"calls":18},{"cost":0.075,"exact":false,"calls":25},{"cost":0.134,"exact":true,"calls":24}],"2000":[{"cost":0.194,"exact":true,"calls":26},{"cost":0.067,"exact":false,"calls":2},{"cost":0.215,"exact":true,"calls":27}],"10000":[{"cost":0.299,"exact":true,"calls":33},{"cost":0.353,"exact":true,"calls":46},{"cost":0.525,"exact":true,"calls":38}]},"rename-trap":{"500":[{"cost":0.038,"exact":true,"calls":4},{"cost":0.042,"exact":true,"calls":8},{"cost":0.075,"exact":true,"calls":8}],"2000":[{"cost":0.078,"exact":true,"calls":4},{"cost":0.132,"exact":true,"calls":20},{"cost":0.08,"exact":true,"calls":4}],"10000":[{"cost":0.175,"exact":true,"calls":13},{"cost":0.116,"exact":true,"calls":6},{"cost":0.117,"exact":true,"calls":6}]}}},"opus":{"keyhole":{"purge-blocks":{"500":[{"cost":0.353,"exact":true,"calls":16},{"cost":0.584,"exact":true,"calls":28}]}}},"sonnet":{"baseline":{"bump-trap":{"500":[{"cost":0.08,"exact":true,"calls":2},{"cost":0.081,"exact":true,"calls":2},{"cost":0.079,"exact":true,"calls":2}],"2000":[{"cost":0.095,"exact":true,"calls":3},{"cost":0.103,"exact":true,"calls":4},{"cost":0.08,"exact":true,"calls":2}],"10000":[{"cost":0.101,"exact":true,"calls":3},{"cost":0.082,"exact":true,"calls":2},{"cost":0.08,"exact":true,"calls":2}]},"composite":{"500":[{"cost":0.439,"exact":true,"calls":22},{"cost":0.398,"exact":true,"calls":20},{"cost":0.365,"exact":true,"calls":17}],"2000":[{"cost":0.403,"exact":true,"calls":6},{"cost":0.41,"exact":true,"calls":10},{"cost":0.403,"exact":true,"calls":7}],"10000":[{"cost":0.553,"exact":true,"calls":10},{"cost":0.688,"exact":true,"calls":16},{"cost":0.648,"exact":true,"calls":17}]},"delete-trap":{"500":[{"cost":0.182,"exact":true,"calls":7},{"cost":0.18,"exact":true,"calls":7},{"cost":0.192,"exact":true,"calls":10}],"2000":[{"cost":0.259,"exact":true,"calls":5},{"cost":0.265,"exact":true,"calls":5},{"cost":0.154,"exact":true,"calls":7}],"10000":[{"cost":0.371,"exact":true,"calls":6},{"cost":0.356,"exact":true,"calls":6},{"cost":0.211,"exact":true,"calls":9}]},"move-multi":{"500":[{"cost":0.225,"exact":true,"calls":7},{"cost":0.207,"exact":true,"calls":8},{"cost":0.229,"exact":true,"calls":8}],"2000":[{"cost":0.364,"exact":true,"calls":9},{"cost":0.294,"exact":true,"calls":6},{"cost":0.25,"exact":true,"calls":4}],"10000":[{"cost":0.565,"exact":true,"calls":15},{"cost":0.645,"exact":true,"calls":17},{"cost":0.568,"exact":true,"calls":15}]},"purge-blocks":{"500":[{"cost":0.23,"exact":true,"calls":9},{"cost":0.249,"exact":true,"calls":10},{"cost":0.153,"exact":false,"calls":4}],"2000":[{"cost":0.517,"exact":true,"calls":10},{"cost":0.25,"exact":true,"calls":4},{"cost":0.3,"exact":true,"calls":6}],"10000":[{"cost":0.358,"exact":true,"calls":6},{"cost":0.342,"exact":true,"calls":5},{"cost":0.362,"exact":true,"calls":6}]},"quote-trap":{"500":[{"cost":0.243,"exact":true,"calls":9},{"cost":0.219,"exact":true,"calls":8},{"cost":0.214,"exact":true,"calls":7}],"2000":[{"cost":0.386,"exact":true,"calls":10},{"cost":0.375,"exact":true,"calls":9},{"cost":0.406,"exact":true,"calls":11}],"10000":[{"cost":0.455,"exact":false,"calls":9},{"cost":0.371,"exact":true,"calls":7},{"cost":0.944,"exact":true,"calls":16}]},"rename-trap":{"500":[{"cost":0.125,"exact":true,"calls":4},{"cost":0.115,"exact":true,"calls":5},{"cost":0.209,"exact":true,"calls":9}],"2000":[{"cost":0.136,"exact":true,"calls":6},{"cost":0.158,"exact":true,"calls":6},{"cost":0.275,"exact":true,"calls":5}],"10000":[{"cost":0.14,"exact":true,"calls":5},{"cost":0.144,"exact":true,"calls":5},{"cost":0.153,"exact":true,"calls":6}]}},"keyhole":{"bump-trap":{"500":[{"cost":0.157,"exact":true,"calls":10},{"cost":0.135,"exact":true,"calls":8},{"cost":0.18,"exact":true,"calls":8}],"2000":[{"cost":0.101,"exact":true,"calls":6},{"cost":0.104,"exact":true,"calls":6},{"cost":0.102,"exact":true,"calls":6}],"10000":[{"cost":0.157,"exact":true,"calls":10},{"cost":0.116,"exact":true,"calls":6},{"cost":0.102,"exact":true,"calls":6}]},"composite":{"500":[{"cost":0.694,"exact":true,"calls":57},{"cost":0.459,"exact":true,"calls":43},{"cost":0.638,"exact":true,"calls":47}],"2000":[{"cost":0.486,"exact":false,"calls":41},{"cost":0.825,"exact":true,"calls":63},{"cost":0.717,"exact":true,"calls":44}],"10000":[{"cost":0.714,"exact":true,"calls":45},{"cost":0.668,"exact":false,"calls":49},{"cost":0.597,"exact":true,"calls":49}]},"delete-trap":{"500":[{"cost":0.222,"exact":true,"calls":17},{"cost":0.174,"exact":true,"calls":6},{"cost":0.255,"exact":true,"calls":15}],"2000":[{"cost":0.254,"exact":true,"calls":12},{"cost":0.222,"exact":true,"calls":13},{"cost":0.149,"exact":true,"calls":7}],"10000":[{"cost":0.326,"exact":true,"calls":12},{"cost":0.192,"exact":true,"calls":9},{"cost":0.197,"exact":true,"calls":8}]},"move-multi":{"500":[{"cost":0.464,"exact":true,"calls":30},{"cost":0.635,"exact":true,"calls":39},{"cost":0.619,"exact":true,"calls":32}],"2000":[{"cost":0.463,"exact":true,"calls":27},{"cost":0.398,"exact":true,"calls":29},{"cost":0.44,"exact":true,"calls":25}],"10000":[{"cost":0.412,"exact":true,"calls":27},{"cost":0.474,"exact":true,"calls":27},{"cost":0.552,"exact":true,"calls":32}]},"purge-blocks":{"500":[{"cost":0.188,"exact":true,"calls":11},{"cost":0.428,"exact":true,"calls":31},{"cost":0.536,"exact":true,"calls":50}],"2000":[{"cost":0.342,"exact":true,"calls":11},{"cost":0.351,"exact":true,"calls":16},{"cost":0.399,"exact":true,"calls":26}],"10000":[{"cost":0.333,"exact":true,"calls":20},{"cost":0.451,"exact":true,"calls":23},{"cost":0.46,"exact":true,"calls":28}]},"quote-trap":{"500":[{"cost":0.356,"exact":true,"calls":30},{"cost":0.195,"exact":true,"calls":7},{"cost":0.281,"exact":true,"calls":13}],"2000":[{"cost":0.295,"exact":true,"calls":18},{"cost":0.432,"exact":true,"calls":25},{"cost":0.345,"exact":true,"calls":17}],"10000":[{"cost":0.27,"exact":true,"calls":15},{"cost":0.275,"exact":true,"calls":13},{"cost":0.303,"exact":true,"calls":21}]},"rename-trap":{"500":[{"cost":0.111,"exact":true,"calls":5},{"cost":0.21,"exact":true,"calls":7},{"cost":0.115,"exact":true,"calls":5}],"2000":[{"cost":0.134,"exact":true,"calls":6},{"cost":0.133,"exact":true,"calls":6},{"cost":0.127,"exact":true,"calls":6}],"10000":[{"cost":0.134,"exact":true,"calls":6},{"cost":0.139,"exact":true,"calls":6},{"cost":0.185,"exact":true,"calls":6}]}},"no-bash":{"bump-trap":{"500":[{"cost":0.102,"exact":true,"calls":5},{"cost":0.096,"exact":true,"calls":5},{"cost":0.096,"exact":true,"calls":5}],"2000":[{"cost":0.087,"exact":true,"calls":4},{"cost":0.082,"exact":true,"calls":3},{"cost":0.072,"exact":true,"calls":2}],"10000":[{"cost":0.083,"exact":true,"calls":3},{"cost":0.087,"exact":true,"calls":4},{"cost":0.087,"exact":true,"calls":4}]},"composite":{"500":[{"cost":0.386,"exact":true,"calls":21},{"cost":0.358,"exact":true,"calls":20},{"cost":0.392,"exact":true,"calls":21}],"2000":[{"cost":0.976,"exact":true,"calls":56},{"cost":1.3,"exact":true,"calls":52},{"cost":1.242,"exact":true,"calls":48}],"10000":[{"cost":1.233,"exact":true,"calls":100},{"cost":1.266,"exact":true,"calls":94},{"cost":1.214,"exact":true,"calls":93}]},"delete-trap":{"500":[{"cost":0.151,"exact":true,"calls":6},{"cost":0.175,"exact":true,"calls":8},{"cost":0.151,"exact":true,"calls":6}],"2000":[{"cost":0.47,"exact":true,"calls":22},{"cost":0.478,"exact":true,"calls":21},{"cost":0.441,"exact":true,"calls":19}],"10000":[{"cost":0.871,"exact":true,"calls":88},{"cost":1.041,"exact":true,"calls":91},{"cost":1.814,"exact":true,"calls":88}]},"move-multi":{"500":[{"cost":0.183,"exact":true,"calls":6},{"cost":0.216,"exact":true,"calls":6},{"cost":0.21,"exact":true,"calls":8}],"2000":[{"cost":0.264,"exact":true,"calls":6},{"cost":0.337,"exact":true,"calls":7},{"cost":0.295,"exact":true,"calls":7}],"10000":[{"cost":0.492,"exact":true,"calls":13},{"cost":0.51,"exact":true,"calls":13},{"cost":0.49,"exact":true,"calls":12}]},"purge-blocks":{"500":[{"cost":0.187,"exact":true,"calls":8},{"cost":0.183,"exact":true,"calls":8},{"cost":0.158,"exact":true,"calls":8}],"2000":[{"cost":0.864,"exact":true,"calls":32},{"cost":0.706,"exact":true,"calls":34},{"cost":0.742,"exact":true,"calls":33}],"10000":[{"cost":4.611,"exact":true,"calls":136},{"cost":4.658,"exact":true,"calls":138}]},"quote-trap":{"500":[{"cost":0.284,"exact":true,"calls":3},{"cost":0.337,"exact":true,"calls":27},{"cost":0.299,"exact":true,"calls":19}],"2000":[{"cost":0.688,"exact":true,"calls":27},{"cost":0.795,"exact":true,"calls":31},{"cost":0.414,"exact":true,"calls":20}],"10000":[{"cost":1.485,"exact":true,"calls":48},{"cost":1.406,"exact":true,"calls":50},{"cost":1.766,"exact":true,"calls":38}]},"rename-trap":{"500":[{"cost":0.163,"exact":true,"calls":10},{"cost":0.139,"exact":true,"calls":8},{"cost":0.136,"exact":true,"calls":8}],"2000":[{"cost":0.485,"exact":true,"calls":24},{"cost":0.565,"exact":true,"calls":27},{"cost":0.505,"exact":true,"calls":17}],"10000":[{"cost":0.399,"exact":true,"calls":8},{"cost":0.158,"exact":true,"calls":7},{"cost":0.485,"exact":true,"calls":11}]}}}};
+// Benchmark results snapshot, extracted from benchmark/results/*.jsonl
+// (aborted trials excluded). Shape:
+//   DATA[model][condition][task][size] = [{cost, exact, calls}, ...]  (one entry per trial)
+const DATA = {
+  "haiku": {
+    "baseline": {
+      "bump-trap": {
+        "500": [{"cost": 0.036, "exact": true, "calls": 3}, {"cost": 0.054, "exact": true, "calls": 4}, {"cost": 0.037, "exact": true, "calls": 3}],
+        "2000": [{"cost": 0.052, "exact": true, "calls": 5}, {"cost": 0.059, "exact": true, "calls": 7}, {"cost": 0.071, "exact": true, "calls": 3}],
+        "10000": [{"cost": 0.12, "exact": true, "calls": 6}, {"cost": 0.106, "exact": true, "calls": 5}, {"cost": 0.106, "exact": true, "calls": 5}]
+      },
+      "composite": {
+        "500": [{"cost": 0.147, "exact": true, "calls": 23}, {"cost": 0.144, "exact": true, "calls": 22}, {"cost": 0.117, "exact": true, "calls": 17}],
+        "2000": [{"cost": 0.433, "exact": true, "calls": 54}, {"cost": 0.429, "exact": true, "calls": 55}, {"cost": 0.428, "exact": true, "calls": 53}],
+        "10000": [{"cost": 0.327, "exact": false, "calls": 32}, {"cost": 0.285, "exact": true, "calls": 25}, {"cost": 0.328, "exact": false, "calls": 31}]
+      },
+      "delete-trap": {
+        "500": [{"cost": 0.051, "exact": true, "calls": 6}, {"cost": 0.05, "exact": true, "calls": 6}, {"cost": 0.05, "exact": true, "calls": 6}],
+        "2000": [{"cost": 0.156, "exact": false, "calls": 10}, {"cost": 0.168, "exact": true, "calls": 19}, {"cost": 0.167, "exact": true, "calls": 19}],
+        "10000": [{"cost": 0.147, "exact": true, "calls": 9}, {"cost": 0.117, "exact": true, "calls": 7}, {"cost": 0.146, "exact": true, "calls": 11}]
+      },
+      "move-multi": {
+        "500": [{"cost": 0.081, "exact": true, "calls": 6}, {"cost": 0.1, "exact": true, "calls": 5}, {"cost": 0.07, "exact": true, "calls": 6}],
+        "2000": [{"cost": 0.164, "exact": false, "calls": 5}, {"cost": 0.111, "exact": true, "calls": 6}, {"cost": 0.131, "exact": true, "calls": 8}],
+        "10000": [{"cost": 0.216, "exact": true, "calls": 18}, {"cost": 0.23, "exact": true, "calls": 20}, {"cost": 0.175, "exact": true, "calls": 14}]
+      },
+      "purge-blocks": {
+        "500": [{"cost": 0.075, "exact": true, "calls": 9}, {"cost": 0.123, "exact": false, "calls": 17}],
+        "2000": [{"cost": 0.258, "exact": true, "calls": 34}, {"cost": 0.264, "exact": true, "calls": 32}, {"cost": 0.208, "exact": true, "calls": 18}],
+        "10000": [{"cost": 0.148, "exact": true, "calls": 10}, {"cost": 0.216, "exact": false, "calls": 16}, {"cost": 0.154, "exact": true, "calls": 10}]
+      },
+      "quote-trap": {
+        "500": [{"cost": 0.084, "exact": true, "calls": 10}, {"cost": 0.055, "exact": false, "calls": 4}, {"cost": 0.155, "exact": true, "calls": 11}],
+        "2000": [{"cost": 0.206, "exact": true, "calls": 26}, {"cost": 0.237, "exact": true, "calls": 31}, {"cost": 0.08, "exact": true, "calls": 4}],
+        "10000": [{"cost": 0.104, "exact": true, "calls": 4}, {"cost": 0.106, "exact": false, "calls": 4}, {"cost": 0.106, "exact": true, "calls": 4}]
+      },
+      "rename-trap": {
+        "500": [{"cost": 0.048, "exact": true, "calls": 5}, {"cost": 0.065, "exact": true, "calls": 8}, {"cost": 0.042, "exact": false, "calls": 4}],
+        "2000": [{"cost": 0.076, "exact": true, "calls": 4}, {"cost": 0.095, "exact": true, "calls": 6}, {"cost": 0.199, "exact": true, "calls": 23}],
+        "10000": [{"cost": 0.161, "exact": true, "calls": 11}, {"cost": 0.112, "exact": true, "calls": 5}, {"cost": 0.073, "exact": true, "calls": 8}]
+      }
+    },
+    "keyhole": {
+      "bump-trap": {
+        "500": [{"cost": 0.065, "exact": true, "calls": 13}, {"cost": 0.069, "exact": true, "calls": 16}, {"cost": 0.042, "exact": true, "calls": 8}],
+        "2000": [{"cost": 0.05, "exact": true, "calls": 12}, {"cost": 0.044, "exact": true, "calls": 8}, {"cost": 0.043, "exact": true, "calls": 9}],
+        "10000": [{"cost": 0.054, "exact": true, "calls": 10}, {"cost": 0.052, "exact": true, "calls": 9}, {"cost": 0.043, "exact": true, "calls": 9}]
+      },
+      "composite": {
+        "500": [{"cost": 0.308, "exact": true, "calls": 71}, {"cost": 0.151, "exact": false, "calls": 40}, {"cost": 0.374, "exact": true, "calls": 95}],
+        "2000": [{"cost": 0.234, "exact": false, "calls": 66}, {"cost": 0.16, "exact": false, "calls": 45}, {"cost": 0.134, "exact": false, "calls": 30}],
+        "10000": [{"cost": 0.199, "exact": false, "calls": 43}, {"cost": 0.154, "exact": false, "calls": 30}, {"cost": 0.197, "exact": false, "calls": 41}]
+      },
+      "delete-trap": {
+        "500": [{"cost": 0.044, "exact": true, "calls": 9}, {"cost": 0.048, "exact": true, "calls": 9}, {"cost": 0.039, "exact": true, "calls": 6}],
+        "2000": [{"cost": 0.039, "exact": true, "calls": 6}, {"cost": 0.04, "exact": true, "calls": 6}, {"cost": 0.049, "exact": true, "calls": 9}],
+        "10000": [{"cost": 0.077, "exact": true, "calls": 15}, {"cost": 0.047, "exact": true, "calls": 8}, {"cost": 0.046, "exact": true, "calls": 7}]
+      },
+      "move-multi": {
+        "500": [{"cost": 0.388, "exact": false, "calls": 77}, {"cost": 0.243, "exact": false, "calls": 59}, {"cost": 0.203, "exact": false, "calls": 49}],
+        "2000": [{"cost": 0.276, "exact": true, "calls": 62}, {"cost": 0.325, "exact": false, "calls": 79}, {"cost": 0.136, "exact": true, "calls": 35}],
+        "10000": [{"cost": 0.276, "exact": false, "calls": 48}, {"cost": 0.42, "exact": true, "calls": 99}, {"cost": 0.127, "exact": false, "calls": 29}]
+      },
+      "purge-blocks": {
+        "500": [{"cost": 0.094, "exact": true, "calls": 21}, {"cost": 0.072, "exact": true, "calls": 15}],
+        "2000": [{"cost": 0.064, "exact": true, "calls": 11}, {"cost": 0.083, "exact": true, "calls": 19}, {"cost": 0.107, "exact": true, "calls": 20}],
+        "10000": [{"cost": 0.095, "exact": true, "calls": 18}, {"cost": 0.091, "exact": true, "calls": 18}, {"cost": 0.129, "exact": true, "calls": 25}]
+      },
+      "quote-trap": {
+        "500": [{"cost": 0.036, "exact": true, "calls": 5}, {"cost": 0.041, "exact": true, "calls": 5}, {"cost": 0.035, "exact": true, "calls": 5}],
+        "2000": [{"cost": 0.039, "exact": true, "calls": 5}, {"cost": 0.052, "exact": true, "calls": 7}, {"cost": 0.039, "exact": true, "calls": 5}],
+        "10000": [{"cost": 0.04, "exact": true, "calls": 5}, {"cost": 0.054, "exact": true, "calls": 7}, {"cost": 0.039, "exact": true, "calls": 5}]
+      },
+      "rename-trap": {
+        "500": [{"cost": 0.042, "exact": true, "calls": 6}, {"cost": 0.037, "exact": true, "calls": 5}, {"cost": 0.039, "exact": true, "calls": 5}],
+        "2000": [{"cost": 0.041, "exact": true, "calls": 5}, {"cost": 0.043, "exact": true, "calls": 6}, {"cost": 0.042, "exact": true, "calls": 5}],
+        "10000": [{"cost": 0.038, "exact": true, "calls": 5}, {"cost": 0.043, "exact": true, "calls": 5}, {"cost": 0.041, "exact": true, "calls": 5}]
+      }
+    },
+    "no-bash": {
+      "bump-trap": {
+        "500": [{"cost": 0.032, "exact": true, "calls": 3}, {"cost": 0.033, "exact": true, "calls": 3}, {"cost": 0.036, "exact": true, "calls": 3}],
+        "2000": [{"cost": 0.063, "exact": true, "calls": 3}, {"cost": 0.062, "exact": true, "calls": 3}, {"cost": 0.067, "exact": true, "calls": 3}],
+        "10000": [{"cost": 0.101, "exact": true, "calls": 5}, {"cost": 0.108, "exact": true, "calls": 6}, {"cost": 0.105, "exact": true, "calls": 5}]
+      },
+      "composite": {
+        "500": [{"cost": 0.126, "exact": true, "calls": 22}, {"cost": 0.096, "exact": true, "calls": 17}, {"cost": 0.104, "exact": true, "calls": 17}],
+        "2000": [{"cost": 0.357, "exact": false, "calls": 49}, {"cost": 0.404, "exact": true, "calls": 54}, {"cost": 0.425, "exact": true, "calls": 54}],
+        "10000": [{"cost": 1.048, "exact": false, "calls": 119}, {"cost": 1.203, "exact": true, "calls": 231}, {"cost": 1.482, "exact": true, "calls": 107}]
+      },
+      "delete-trap": {
+        "500": [{"cost": 0.045, "exact": true, "calls": 6}, {"cost": 0.044, "exact": true, "calls": 6}, {"cost": 0.049, "exact": true, "calls": 6}],
+        "2000": [{"cost": 0.152, "exact": true, "calls": 18}, {"cost": 0.15, "exact": true, "calls": 19}, {"cost": 0.164, "exact": true, "calls": 19}],
+        "10000": [{"cost": 1.258, "exact": true, "calls": 149}, {"cost": 0.85, "exact": true, "calls": 135}, {"cost": 1.208, "exact": true, "calls": 114}]
+      },
+      "move-multi": {
+        "500": [{"cost": 0.087, "exact": true, "calls": 7}, {"cost": 0.059, "exact": true, "calls": 5}, {"cost": 0.081, "exact": true, "calls": 6}],
+        "2000": [{"cost": 0.155, "exact": true, "calls": 5}, {"cost": 0.112, "exact": true, "calls": 8}, {"cost": 0.123, "exact": true, "calls": 9}],
+        "10000": [{"cost": 0.197, "exact": true, "calls": 19}, {"cost": 0.173, "exact": true, "calls": 19}, {"cost": 0.26, "exact": true, "calls": 22}]
+      },
+      "purge-blocks": {
+        "500": [{"cost": 0.098, "exact": true, "calls": 9}, {"cost": 0.066, "exact": false, "calls": 9}, {"cost": 0.076, "exact": true, "calls": 10}],
+        "2000": [{"cost": 0.23, "exact": true, "calls": 30}, {"cost": 0.239, "exact": true, "calls": 33}, {"cost": 0.246, "exact": true, "calls": 31}],
+        "10000": [{"cost": 0.894, "exact": false, "calls": 38}, {"cost": 0.877, "exact": false, "calls": 68}, {"cost": 1.049, "exact": false, "calls": 50}]
+      },
+      "quote-trap": {
+        "500": [{"cost": 0.094, "exact": true, "calls": 18}, {"cost": 0.075, "exact": false, "calls": 25}, {"cost": 0.134, "exact": true, "calls": 24}],
+        "2000": [{"cost": 0.194, "exact": true, "calls": 26}, {"cost": 0.067, "exact": false, "calls": 2}, {"cost": 0.215, "exact": true, "calls": 27}],
+        "10000": [{"cost": 0.299, "exact": true, "calls": 33}, {"cost": 0.353, "exact": true, "calls": 46}, {"cost": 0.525, "exact": true, "calls": 38}]
+      },
+      "rename-trap": {
+        "500": [{"cost": 0.038, "exact": true, "calls": 4}, {"cost": 0.042, "exact": true, "calls": 8}, {"cost": 0.075, "exact": true, "calls": 8}],
+        "2000": [{"cost": 0.078, "exact": true, "calls": 4}, {"cost": 0.132, "exact": true, "calls": 20}, {"cost": 0.08, "exact": true, "calls": 4}],
+        "10000": [{"cost": 0.175, "exact": true, "calls": 13}, {"cost": 0.116, "exact": true, "calls": 6}, {"cost": 0.117, "exact": true, "calls": 6}]
+      }
+    }
+  },
+  "opus": {
+    "keyhole": {
+      "purge-blocks": {
+        "500": [{"cost": 0.353, "exact": true, "calls": 16}, {"cost": 0.584, "exact": true, "calls": 28}]
+      }
+    }
+  },
+  "sonnet": {
+    "baseline": {
+      "bump-trap": {
+        "500": [{"cost": 0.08, "exact": true, "calls": 2}, {"cost": 0.081, "exact": true, "calls": 2}, {"cost": 0.079, "exact": true, "calls": 2}],
+        "2000": [{"cost": 0.095, "exact": true, "calls": 3}, {"cost": 0.103, "exact": true, "calls": 4}, {"cost": 0.08, "exact": true, "calls": 2}],
+        "10000": [{"cost": 0.101, "exact": true, "calls": 3}, {"cost": 0.082, "exact": true, "calls": 2}, {"cost": 0.08, "exact": true, "calls": 2}]
+      },
+      "composite": {
+        "500": [{"cost": 0.439, "exact": true, "calls": 22}, {"cost": 0.398, "exact": true, "calls": 20}, {"cost": 0.365, "exact": true, "calls": 17}],
+        "2000": [{"cost": 0.403, "exact": true, "calls": 6}, {"cost": 0.41, "exact": true, "calls": 10}, {"cost": 0.403, "exact": true, "calls": 7}],
+        "10000": [{"cost": 0.553, "exact": true, "calls": 10}, {"cost": 0.688, "exact": true, "calls": 16}, {"cost": 0.648, "exact": true, "calls": 17}]
+      },
+      "delete-trap": {
+        "500": [{"cost": 0.182, "exact": true, "calls": 7}, {"cost": 0.18, "exact": true, "calls": 7}, {"cost": 0.192, "exact": true, "calls": 10}],
+        "2000": [{"cost": 0.259, "exact": true, "calls": 5}, {"cost": 0.265, "exact": true, "calls": 5}, {"cost": 0.154, "exact": true, "calls": 7}],
+        "10000": [{"cost": 0.371, "exact": true, "calls": 6}, {"cost": 0.356, "exact": true, "calls": 6}, {"cost": 0.211, "exact": true, "calls": 9}]
+      },
+      "move-multi": {
+        "500": [{"cost": 0.225, "exact": true, "calls": 7}, {"cost": 0.207, "exact": true, "calls": 8}, {"cost": 0.229, "exact": true, "calls": 8}],
+        "2000": [{"cost": 0.364, "exact": true, "calls": 9}, {"cost": 0.294, "exact": true, "calls": 6}, {"cost": 0.25, "exact": true, "calls": 4}],
+        "10000": [{"cost": 0.565, "exact": true, "calls": 15}, {"cost": 0.645, "exact": true, "calls": 17}, {"cost": 0.568, "exact": true, "calls": 15}]
+      },
+      "purge-blocks": {
+        "500": [{"cost": 0.23, "exact": true, "calls": 9}, {"cost": 0.249, "exact": true, "calls": 10}, {"cost": 0.153, "exact": false, "calls": 4}],
+        "2000": [{"cost": 0.517, "exact": true, "calls": 10}, {"cost": 0.25, "exact": true, "calls": 4}, {"cost": 0.3, "exact": true, "calls": 6}],
+        "10000": [{"cost": 0.358, "exact": true, "calls": 6}, {"cost": 0.342, "exact": true, "calls": 5}, {"cost": 0.362, "exact": true, "calls": 6}]
+      },
+      "quote-trap": {
+        "500": [{"cost": 0.243, "exact": true, "calls": 9}, {"cost": 0.219, "exact": true, "calls": 8}, {"cost": 0.214, "exact": true, "calls": 7}],
+        "2000": [{"cost": 0.386, "exact": true, "calls": 10}, {"cost": 0.375, "exact": true, "calls": 9}, {"cost": 0.406, "exact": true, "calls": 11}],
+        "10000": [{"cost": 0.455, "exact": false, "calls": 9}, {"cost": 0.371, "exact": true, "calls": 7}, {"cost": 0.944, "exact": true, "calls": 16}]
+      },
+      "rename-trap": {
+        "500": [{"cost": 0.125, "exact": true, "calls": 4}, {"cost": 0.115, "exact": true, "calls": 5}, {"cost": 0.209, "exact": true, "calls": 9}],
+        "2000": [{"cost": 0.136, "exact": true, "calls": 6}, {"cost": 0.158, "exact": true, "calls": 6}, {"cost": 0.275, "exact": true, "calls": 5}],
+        "10000": [{"cost": 0.14, "exact": true, "calls": 5}, {"cost": 0.144, "exact": true, "calls": 5}, {"cost": 0.153, "exact": true, "calls": 6}]
+      }
+    },
+    "keyhole": {
+      "bump-trap": {
+        "500": [{"cost": 0.157, "exact": true, "calls": 10}, {"cost": 0.135, "exact": true, "calls": 8}, {"cost": 0.18, "exact": true, "calls": 8}],
+        "2000": [{"cost": 0.101, "exact": true, "calls": 6}, {"cost": 0.104, "exact": true, "calls": 6}, {"cost": 0.102, "exact": true, "calls": 6}],
+        "10000": [{"cost": 0.157, "exact": true, "calls": 10}, {"cost": 0.116, "exact": true, "calls": 6}, {"cost": 0.102, "exact": true, "calls": 6}]
+      },
+      "composite": {
+        "500": [{"cost": 0.694, "exact": true, "calls": 57}, {"cost": 0.459, "exact": true, "calls": 43}, {"cost": 0.638, "exact": true, "calls": 47}],
+        "2000": [{"cost": 0.486, "exact": false, "calls": 41}, {"cost": 0.825, "exact": true, "calls": 63}, {"cost": 0.717, "exact": true, "calls": 44}],
+        "10000": [{"cost": 0.714, "exact": true, "calls": 45}, {"cost": 0.668, "exact": false, "calls": 49}, {"cost": 0.597, "exact": true, "calls": 49}]
+      },
+      "delete-trap": {
+        "500": [{"cost": 0.222, "exact": true, "calls": 17}, {"cost": 0.174, "exact": true, "calls": 6}, {"cost": 0.255, "exact": true, "calls": 15}],
+        "2000": [{"cost": 0.254, "exact": true, "calls": 12}, {"cost": 0.222, "exact": true, "calls": 13}, {"cost": 0.149, "exact": true, "calls": 7}],
+        "10000": [{"cost": 0.326, "exact": true, "calls": 12}, {"cost": 0.192, "exact": true, "calls": 9}, {"cost": 0.197, "exact": true, "calls": 8}]
+      },
+      "move-multi": {
+        "500": [{"cost": 0.464, "exact": true, "calls": 30}, {"cost": 0.635, "exact": true, "calls": 39}, {"cost": 0.619, "exact": true, "calls": 32}],
+        "2000": [{"cost": 0.463, "exact": true, "calls": 27}, {"cost": 0.398, "exact": true, "calls": 29}, {"cost": 0.44, "exact": true, "calls": 25}],
+        "10000": [{"cost": 0.412, "exact": true, "calls": 27}, {"cost": 0.474, "exact": true, "calls": 27}, {"cost": 0.552, "exact": true, "calls": 32}]
+      },
+      "purge-blocks": {
+        "500": [{"cost": 0.188, "exact": true, "calls": 11}, {"cost": 0.428, "exact": true, "calls": 31}, {"cost": 0.536, "exact": true, "calls": 50}],
+        "2000": [{"cost": 0.342, "exact": true, "calls": 11}, {"cost": 0.351, "exact": true, "calls": 16}, {"cost": 0.399, "exact": true, "calls": 26}],
+        "10000": [{"cost": 0.333, "exact": true, "calls": 20}, {"cost": 0.451, "exact": true, "calls": 23}, {"cost": 0.46, "exact": true, "calls": 28}]
+      },
+      "quote-trap": {
+        "500": [{"cost": 0.356, "exact": true, "calls": 30}, {"cost": 0.195, "exact": true, "calls": 7}, {"cost": 0.281, "exact": true, "calls": 13}],
+        "2000": [{"cost": 0.295, "exact": true, "calls": 18}, {"cost": 0.432, "exact": true, "calls": 25}, {"cost": 0.345, "exact": true, "calls": 17}],
+        "10000": [{"cost": 0.27, "exact": true, "calls": 15}, {"cost": 0.275, "exact": true, "calls": 13}, {"cost": 0.303, "exact": true, "calls": 21}]
+      },
+      "rename-trap": {
+        "500": [{"cost": 0.111, "exact": true, "calls": 5}, {"cost": 0.21, "exact": true, "calls": 7}, {"cost": 0.115, "exact": true, "calls": 5}],
+        "2000": [{"cost": 0.134, "exact": true, "calls": 6}, {"cost": 0.133, "exact": true, "calls": 6}, {"cost": 0.127, "exact": true, "calls": 6}],
+        "10000": [{"cost": 0.134, "exact": true, "calls": 6}, {"cost": 0.139, "exact": true, "calls": 6}, {"cost": 0.185, "exact": true, "calls": 6}]
+      }
+    },
+    "no-bash": {
+      "bump-trap": {
+        "500": [{"cost": 0.102, "exact": true, "calls": 5}, {"cost": 0.096, "exact": true, "calls": 5}, {"cost": 0.096, "exact": true, "calls": 5}],
+        "2000": [{"cost": 0.087, "exact": true, "calls": 4}, {"cost": 0.082, "exact": true, "calls": 3}, {"cost": 0.072, "exact": true, "calls": 2}],
+        "10000": [{"cost": 0.083, "exact": true, "calls": 3}, {"cost": 0.087, "exact": true, "calls": 4}, {"cost": 0.087, "exact": true, "calls": 4}]
+      },
+      "composite": {
+        "500": [{"cost": 0.386, "exact": true, "calls": 21}, {"cost": 0.358, "exact": true, "calls": 20}, {"cost": 0.392, "exact": true, "calls": 21}],
+        "2000": [{"cost": 0.976, "exact": true, "calls": 56}, {"cost": 1.3, "exact": true, "calls": 52}, {"cost": 1.242, "exact": true, "calls": 48}],
+        "10000": [{"cost": 1.233, "exact": true, "calls": 100}, {"cost": 1.266, "exact": true, "calls": 94}, {"cost": 1.214, "exact": true, "calls": 93}]
+      },
+      "delete-trap": {
+        "500": [{"cost": 0.151, "exact": true, "calls": 6}, {"cost": 0.175, "exact": true, "calls": 8}, {"cost": 0.151, "exact": true, "calls": 6}],
+        "2000": [{"cost": 0.47, "exact": true, "calls": 22}, {"cost": 0.478, "exact": true, "calls": 21}, {"cost": 0.441, "exact": true, "calls": 19}],
+        "10000": [{"cost": 0.871, "exact": true, "calls": 88}, {"cost": 1.041, "exact": true, "calls": 91}, {"cost": 1.814, "exact": true, "calls": 88}]
+      },
+      "move-multi": {
+        "500": [{"cost": 0.183, "exact": true, "calls": 6}, {"cost": 0.216, "exact": true, "calls": 6}, {"cost": 0.21, "exact": true, "calls": 8}],
+        "2000": [{"cost": 0.264, "exact": true, "calls": 6}, {"cost": 0.337, "exact": true, "calls": 7}, {"cost": 0.295, "exact": true, "calls": 7}],
+        "10000": [{"cost": 0.492, "exact": true, "calls": 13}, {"cost": 0.51, "exact": true, "calls": 13}, {"cost": 0.49, "exact": true, "calls": 12}]
+      },
+      "purge-blocks": {
+        "500": [{"cost": 0.187, "exact": true, "calls": 8}, {"cost": 0.183, "exact": true, "calls": 8}, {"cost": 0.158, "exact": true, "calls": 8}],
+        "2000": [{"cost": 0.864, "exact": true, "calls": 32}, {"cost": 0.706, "exact": true, "calls": 34}, {"cost": 0.742, "exact": true, "calls": 33}],
+        "10000": [{"cost": 4.611, "exact": true, "calls": 136}, {"cost": 4.658, "exact": true, "calls": 138}]
+      },
+      "quote-trap": {
+        "500": [{"cost": 0.284, "exact": true, "calls": 3}, {"cost": 0.337, "exact": true, "calls": 27}, {"cost": 0.299, "exact": true, "calls": 19}],
+        "2000": [{"cost": 0.688, "exact": true, "calls": 27}, {"cost": 0.795, "exact": true, "calls": 31}, {"cost": 0.414, "exact": true, "calls": 20}],
+        "10000": [{"cost": 1.485, "exact": true, "calls": 48}, {"cost": 1.406, "exact": true, "calls": 50}, {"cost": 1.766, "exact": true, "calls": 38}]
+      },
+      "rename-trap": {
+        "500": [{"cost": 0.163, "exact": true, "calls": 10}, {"cost": 0.139, "exact": true, "calls": 8}, {"cost": 0.136, "exact": true, "calls": 8}],
+        "2000": [{"cost": 0.485, "exact": true, "calls": 24}, {"cost": 0.565, "exact": true, "calls": 27}, {"cost": 0.505, "exact": true, "calls": 17}],
+        "10000": [{"cost": 0.399, "exact": true, "calls": 8}, {"cost": 0.158, "exact": true, "calls": 7}, {"cost": 0.485, "exact": true, "calls": 11}]
+      }
+    }
+  }
+};
 
 const TASK_INFO = {
   "rename-trap": {
@@ -228,20 +465,28 @@ def normalize_totals(rows):
   },
 };
 
+// The three benchmark conditions, in fixed display order. Colors are CSS
+// variables so they follow the light/dark theme.
 const SERIES = [
   { key: "keyhole",  label: "keyhole (djinnvim)", cssVar: "--series-keyhole" },
   { key: "baseline", label: "baseline (all tools)", cssVar: "--series-baseline" },
   { key: "no-bash",  label: "no-bash (Bash denied)", cssVar: "--series-nobash" },
 ];
-const SIZES = ["500", "2000", "10000"];
+const SIZES = ["500", "2000", "10000"];   // file sizes = the x axis
+
+// Current filter selection; render() reads this and redraws everything.
 const state = { model: "haiku", task: "__all__" };
 
 const svg = document.getElementById("chart");
 const tooltip = document.getElementById("tooltip");
 const wrap = document.querySelector(".chart-wrap");
 
+// Resolve a CSS variable to its current value — looked up at render time so a
+// theme change re-colors the SVG (whose attributes can't use var()) correctly.
 const cssColor = v => getComputedStyle(document.querySelector(".viz-root")).getPropertyValue(v).trim();
 
+// All trial records for one cell of the grid; "__all__" pools every task
+// (that pooled mean is what the README's headline cost table reports).
 function trials(model, cond, task, size) {
   if (task === "__all__") {
     const out = [];
@@ -251,8 +496,10 @@ function trials(model, cond, task, size) {
   }
   return ((DATA[model][cond] || {})[task] || {})[size] || [];
 }
+// Mean cost of a list of trials; null when the cell has no data.
 const mean = a => a.length ? a.reduce((s, x) => s + x.cost, 0) / a.length : null;
 
+// Fill the task <select> from whatever tasks exist in DATA.
 function buildTaskSelect() {
   const sel = document.getElementById("taskSel");
   const tasks = new Set();
@@ -276,11 +523,15 @@ document.getElementById("modelSeg").addEventListener("click", e => {
   render();
 });
 
+// --- chart geometry (SVG viewBox units) ------------------------------------
+// Wide right margin leaves room for the line-end labels ("keyhole $0.33").
 const M = { top: 34, right: 150, bottom: 40, left: 56 };
 const W = 760, H = 400;
 const plotW = W - M.left - M.right, plotH = H - M.top - M.bottom;
+// x position of size column i: 3 evenly spaced columns, inset 8% from the edges.
 const xPos = i => M.left + plotW * (0.08 + 0.84 * i / (SIZES.length - 1));
 
+// Round the data maximum up to a clean top-of-axis value.
 function niceMax(v) {
   if (v <= 0.25) return 0.25;
   if (v <= 0.5) return 0.5;
@@ -290,8 +541,13 @@ function niceMax(v) {
   return Math.ceil(v);
 }
 
+// What the chart currently shows, one entry per size column — kept around so
+// the hover handler can find the nearest column without recomputing.
 let current = []; // per size: {size, x, series:[{key,label,color,mean,trials}]}
 
+// Full redraw from `state`: builds the SVG as a list of element strings
+// (grid, axes, one line + markers per condition, collision-resolved end
+// labels), then updates legend, task card, footnote, and data table.
 function render() {
   const singleTask = state.task !== "__all__";
   current = SIZES.map((size, i) => ({
@@ -302,6 +558,8 @@ function render() {
     }),
   }));
 
+  // y scale: fit the means — and, in single-task view, the individual trial
+  // dots too, since they spread wider than the means.
   let maxV = 0;
   for (const col of current)
     for (const s of col.series) {
@@ -311,7 +569,9 @@ function render() {
   const yMax = niceMax(maxV || 1);
   const y = v => M.top + plotH * (1 - v / yMax);
 
-  const el = [];
+  const el = [];  // SVG elements as strings; joined into svg.innerHTML at the end
+
+  // horizontal gridlines + y tick labels
   const ticks = 5;
   for (let k = 0; k <= ticks; k++) {
     const v = yMax * k / ticks, yy = y(v);
@@ -326,6 +586,8 @@ function render() {
   // crosshair (behind marks)
   el.push(`<line id="xhair" y1="${M.top}" y2="${y(0)}" stroke="var(--axis)" stroke-width="1" stroke-dasharray="3 3" visibility="hidden"/>`);
 
+  // one line per condition: path through the means, faint per-trial dots
+  // (single-task view only), ringed markers on the means, end label collected
   const endLabels = [];
   for (const [si, s] of SERIES.entries()) {
     const pts = current.map(c => ({ x: c.x, v: c.series[si].mean })).filter(p => p.v != null);
@@ -395,7 +657,10 @@ function renderTable() {
     `<div class="note">* = trial completed but output was not byte-identical to target (see README for exact vs. semantic grading).</div>`;
 }
 
+// --- hover: crosshair + tooltip --------------------------------------------
+// Snap to the nearest size column and show every condition's mean and trials.
 svg.addEventListener("mousemove", e => {
+  // mouse position in viewBox coordinates (the SVG scales with its container)
   const pt = svg.createSVGPoint();
   pt.x = e.clientX; pt.y = e.clientY;
   const p = pt.matrixTransform(svg.getScreenCTM().inverse());
@@ -429,6 +694,7 @@ function hideTip() {
   if (xh) xh.setAttribute("visibility", "hidden");
 }
 
+// Redraw on OS theme change so SVG colors (resolved at render time) follow.
 if (window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
 buildTaskSelect();
 render();
