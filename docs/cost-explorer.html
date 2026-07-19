@@ -19,6 +19,7 @@
     --series-keyhole: #2a78d6;
     --series-baseline: #008300;
     --series-nobash: #e87ba4;
+    --fail: #c73030;
     --tooltip-bg: #ffffff;
     --tooltip-border: #d8d7d2;
     --control-bg: #f1f0ec;
@@ -41,6 +42,7 @@
       --series-keyhole: #3987e5;
       --series-baseline: #008300;
       --series-nobash: #d55181;
+      --fail: #ef6a6a;
       --tooltip-bg: #242422;
       --tooltip-border: #45443f;
       --control-bg: #242422;
@@ -59,6 +61,7 @@
     --series-keyhole: #3987e5;
     --series-baseline: #008300;
     --series-nobash: #d55181;
+    --fail: #ef6a6a;
     --tooltip-bg: #242422;
     --tooltip-border: #45443f;
     --control-bg: #242422;
@@ -163,6 +166,10 @@
 // Benchmark results snapshot, extracted from benchmark/results/*.jsonl
 // (aborted trials excluded). Shape:
 //   DATA[model][condition][task][size] = [{cost, exact, calls}, ...]  (one entry per trial)
+// Non-exact trials additionally carry "sem", the AST comparison of the trial's
+// output against the target: true = AST-equal (formatting-only divergence),
+// false = semantically wrong output (a silent failure), null = the trial's
+// workdir was pruned before the AST sweep, so it can't be classified.
 const DATA = {
   "haiku": {
     "baseline": {
@@ -174,30 +181,30 @@ const DATA = {
       "composite": {
         "500": [{"cost": 0.147, "exact": true, "calls": 23}, {"cost": 0.144, "exact": true, "calls": 22}, {"cost": 0.117, "exact": true, "calls": 17}],
         "2000": [{"cost": 0.433, "exact": true, "calls": 54}, {"cost": 0.429, "exact": true, "calls": 55}, {"cost": 0.428, "exact": true, "calls": 53}],
-        "10000": [{"cost": 0.327, "exact": false, "calls": 32}, {"cost": 0.285, "exact": true, "calls": 25}, {"cost": 0.328, "exact": false, "calls": 31}]
+        "10000": [{"cost": 0.327, "exact": false, "sem": false, "calls": 32}, {"cost": 0.285, "exact": true, "calls": 25}, {"cost": 0.328, "exact": false, "sem": false, "calls": 31}]
       },
       "delete-trap": {
         "500": [{"cost": 0.051, "exact": true, "calls": 6}, {"cost": 0.05, "exact": true, "calls": 6}, {"cost": 0.05, "exact": true, "calls": 6}],
-        "2000": [{"cost": 0.156, "exact": false, "calls": 10}, {"cost": 0.168, "exact": true, "calls": 19}, {"cost": 0.167, "exact": true, "calls": 19}],
+        "2000": [{"cost": 0.156, "exact": false, "sem": false, "calls": 10}, {"cost": 0.168, "exact": true, "calls": 19}, {"cost": 0.167, "exact": true, "calls": 19}],
         "10000": [{"cost": 0.147, "exact": true, "calls": 9}, {"cost": 0.117, "exact": true, "calls": 7}, {"cost": 0.146, "exact": true, "calls": 11}]
       },
       "move-multi": {
         "500": [{"cost": 0.081, "exact": true, "calls": 6}, {"cost": 0.1, "exact": true, "calls": 5}, {"cost": 0.07, "exact": true, "calls": 6}],
-        "2000": [{"cost": 0.164, "exact": false, "calls": 5}, {"cost": 0.111, "exact": true, "calls": 6}, {"cost": 0.131, "exact": true, "calls": 8}],
+        "2000": [{"cost": 0.164, "exact": false, "sem": true, "calls": 5}, {"cost": 0.111, "exact": true, "calls": 6}, {"cost": 0.131, "exact": true, "calls": 8}],
         "10000": [{"cost": 0.216, "exact": true, "calls": 18}, {"cost": 0.23, "exact": true, "calls": 20}, {"cost": 0.175, "exact": true, "calls": 14}]
       },
       "purge-blocks": {
-        "500": [{"cost": 0.075, "exact": true, "calls": 9}, {"cost": 0.123, "exact": false, "calls": 17}],
+        "500": [{"cost": 0.075, "exact": true, "calls": 9}, {"cost": 0.123, "exact": false, "sem": true, "calls": 17}],
         "2000": [{"cost": 0.258, "exact": true, "calls": 34}, {"cost": 0.264, "exact": true, "calls": 32}, {"cost": 0.208, "exact": true, "calls": 18}],
-        "10000": [{"cost": 0.148, "exact": true, "calls": 10}, {"cost": 0.216, "exact": false, "calls": 16}, {"cost": 0.154, "exact": true, "calls": 10}]
+        "10000": [{"cost": 0.148, "exact": true, "calls": 10}, {"cost": 0.216, "exact": false, "sem": false, "calls": 16}, {"cost": 0.154, "exact": true, "calls": 10}]
       },
       "quote-trap": {
-        "500": [{"cost": 0.084, "exact": true, "calls": 10}, {"cost": 0.055, "exact": false, "calls": 4}, {"cost": 0.155, "exact": true, "calls": 11}],
+        "500": [{"cost": 0.084, "exact": true, "calls": 10}, {"cost": 0.055, "exact": false, "sem": true, "calls": 4}, {"cost": 0.155, "exact": true, "calls": 11}],
         "2000": [{"cost": 0.206, "exact": true, "calls": 26}, {"cost": 0.237, "exact": true, "calls": 31}, {"cost": 0.08, "exact": true, "calls": 4}],
-        "10000": [{"cost": 0.104, "exact": true, "calls": 4}, {"cost": 0.106, "exact": false, "calls": 4}, {"cost": 0.106, "exact": true, "calls": 4}]
+        "10000": [{"cost": 0.104, "exact": true, "calls": 4}, {"cost": 0.106, "exact": false, "sem": true, "calls": 4}, {"cost": 0.106, "exact": true, "calls": 4}]
       },
       "rename-trap": {
-        "500": [{"cost": 0.048, "exact": true, "calls": 5}, {"cost": 0.065, "exact": true, "calls": 8}, {"cost": 0.042, "exact": false, "calls": 4}],
+        "500": [{"cost": 0.048, "exact": true, "calls": 5}, {"cost": 0.065, "exact": true, "calls": 8}, {"cost": 0.042, "exact": false, "sem": false, "calls": 4}],
         "2000": [{"cost": 0.076, "exact": true, "calls": 4}, {"cost": 0.095, "exact": true, "calls": 6}, {"cost": 0.199, "exact": true, "calls": 23}],
         "10000": [{"cost": 0.161, "exact": true, "calls": 11}, {"cost": 0.112, "exact": true, "calls": 5}, {"cost": 0.073, "exact": true, "calls": 8}]
       }
@@ -209,9 +216,9 @@ const DATA = {
         "10000": [{"cost": 0.054, "exact": true, "calls": 10}, {"cost": 0.052, "exact": true, "calls": 9}, {"cost": 0.043, "exact": true, "calls": 9}]
       },
       "composite": {
-        "500": [{"cost": 0.308, "exact": true, "calls": 71}, {"cost": 0.151, "exact": false, "calls": 40}, {"cost": 0.374, "exact": true, "calls": 95}],
-        "2000": [{"cost": 0.234, "exact": false, "calls": 66}, {"cost": 0.16, "exact": false, "calls": 45}, {"cost": 0.134, "exact": false, "calls": 30}],
-        "10000": [{"cost": 0.199, "exact": false, "calls": 43}, {"cost": 0.154, "exact": false, "calls": 30}, {"cost": 0.197, "exact": false, "calls": 41}]
+        "500": [{"cost": 0.308, "exact": true, "calls": 71}, {"cost": 0.151, "exact": false, "sem": true, "calls": 40}, {"cost": 0.374, "exact": true, "calls": 95}],
+        "2000": [{"cost": 0.234, "exact": false, "sem": true, "calls": 66}, {"cost": 0.16, "exact": false, "sem": true, "calls": 45}, {"cost": 0.134, "exact": false, "sem": false, "calls": 30}],
+        "10000": [{"cost": 0.199, "exact": false, "sem": true, "calls": 43}, {"cost": 0.154, "exact": false, "sem": true, "calls": 30}, {"cost": 0.197, "exact": false, "sem": false, "calls": 41}]
       },
       "delete-trap": {
         "500": [{"cost": 0.044, "exact": true, "calls": 9}, {"cost": 0.048, "exact": true, "calls": 9}, {"cost": 0.039, "exact": true, "calls": 6}],
@@ -219,9 +226,9 @@ const DATA = {
         "10000": [{"cost": 0.077, "exact": true, "calls": 15}, {"cost": 0.047, "exact": true, "calls": 8}, {"cost": 0.046, "exact": true, "calls": 7}]
       },
       "move-multi": {
-        "500": [{"cost": 0.388, "exact": false, "calls": 77}, {"cost": 0.243, "exact": false, "calls": 59}, {"cost": 0.203, "exact": false, "calls": 49}],
-        "2000": [{"cost": 0.276, "exact": true, "calls": 62}, {"cost": 0.325, "exact": false, "calls": 79}, {"cost": 0.136, "exact": true, "calls": 35}],
-        "10000": [{"cost": 0.276, "exact": false, "calls": 48}, {"cost": 0.42, "exact": true, "calls": 99}, {"cost": 0.127, "exact": false, "calls": 29}]
+        "500": [{"cost": 0.388, "exact": false, "sem": true, "calls": 77}, {"cost": 0.243, "exact": false, "sem": true, "calls": 59}, {"cost": 0.203, "exact": false, "sem": false, "calls": 49}],
+        "2000": [{"cost": 0.276, "exact": true, "calls": 62}, {"cost": 0.325, "exact": false, "sem": true, "calls": 79}, {"cost": 0.136, "exact": true, "calls": 35}],
+        "10000": [{"cost": 0.276, "exact": false, "sem": true, "calls": 48}, {"cost": 0.42, "exact": true, "calls": 99}, {"cost": 0.127, "exact": false, "sem": true, "calls": 29}]
       },
       "purge-blocks": {
         "500": [{"cost": 0.094, "exact": true, "calls": 21}, {"cost": 0.072, "exact": true, "calls": 15}],
@@ -247,8 +254,8 @@ const DATA = {
       },
       "composite": {
         "500": [{"cost": 0.126, "exact": true, "calls": 22}, {"cost": 0.096, "exact": true, "calls": 17}, {"cost": 0.104, "exact": true, "calls": 17}],
-        "2000": [{"cost": 0.357, "exact": false, "calls": 49}, {"cost": 0.404, "exact": true, "calls": 54}, {"cost": 0.425, "exact": true, "calls": 54}],
-        "10000": [{"cost": 1.048, "exact": false, "calls": 119}, {"cost": 1.203, "exact": true, "calls": 231}, {"cost": 1.482, "exact": true, "calls": 107}]
+        "2000": [{"cost": 0.357, "exact": false, "sem": null, "calls": 49}, {"cost": 0.404, "exact": true, "calls": 54}, {"cost": 0.425, "exact": true, "calls": 54}],
+        "10000": [{"cost": 1.048, "exact": false, "sem": null, "calls": 119}, {"cost": 1.203, "exact": true, "calls": 231}, {"cost": 1.482, "exact": true, "calls": 107}]
       },
       "delete-trap": {
         "500": [{"cost": 0.045, "exact": true, "calls": 6}, {"cost": 0.044, "exact": true, "calls": 6}, {"cost": 0.049, "exact": true, "calls": 6}],
@@ -261,13 +268,13 @@ const DATA = {
         "10000": [{"cost": 0.197, "exact": true, "calls": 19}, {"cost": 0.173, "exact": true, "calls": 19}, {"cost": 0.26, "exact": true, "calls": 22}]
       },
       "purge-blocks": {
-        "500": [{"cost": 0.098, "exact": true, "calls": 9}, {"cost": 0.066, "exact": false, "calls": 9}, {"cost": 0.076, "exact": true, "calls": 10}],
+        "500": [{"cost": 0.098, "exact": true, "calls": 9}, {"cost": 0.066, "exact": false, "sem": null, "calls": 9}, {"cost": 0.076, "exact": true, "calls": 10}],
         "2000": [{"cost": 0.23, "exact": true, "calls": 30}, {"cost": 0.239, "exact": true, "calls": 33}, {"cost": 0.246, "exact": true, "calls": 31}],
-        "10000": [{"cost": 0.894, "exact": false, "calls": 38}, {"cost": 0.877, "exact": false, "calls": 68}, {"cost": 1.049, "exact": false, "calls": 50}]
+        "10000": [{"cost": 0.894, "exact": false, "sem": null, "calls": 38}, {"cost": 0.877, "exact": false, "sem": null, "calls": 68}, {"cost": 1.049, "exact": false, "sem": false, "calls": 50}]
       },
       "quote-trap": {
-        "500": [{"cost": 0.094, "exact": true, "calls": 18}, {"cost": 0.075, "exact": false, "calls": 25}, {"cost": 0.134, "exact": true, "calls": 24}],
-        "2000": [{"cost": 0.194, "exact": true, "calls": 26}, {"cost": 0.067, "exact": false, "calls": 2}, {"cost": 0.215, "exact": true, "calls": 27}],
+        "500": [{"cost": 0.094, "exact": true, "calls": 18}, {"cost": 0.075, "exact": false, "sem": null, "calls": 25}, {"cost": 0.134, "exact": true, "calls": 24}],
+        "2000": [{"cost": 0.194, "exact": true, "calls": 26}, {"cost": 0.067, "exact": false, "sem": null, "calls": 2}, {"cost": 0.215, "exact": true, "calls": 27}],
         "10000": [{"cost": 0.299, "exact": true, "calls": 33}, {"cost": 0.353, "exact": true, "calls": 46}, {"cost": 0.525, "exact": true, "calls": 38}]
       },
       "rename-trap": {
@@ -307,14 +314,14 @@ const DATA = {
         "10000": [{"cost": 0.565, "exact": true, "calls": 15}, {"cost": 0.645, "exact": true, "calls": 17}, {"cost": 0.568, "exact": true, "calls": 15}]
       },
       "purge-blocks": {
-        "500": [{"cost": 0.23, "exact": true, "calls": 9}, {"cost": 0.249, "exact": true, "calls": 10}, {"cost": 0.153, "exact": false, "calls": 4}],
+        "500": [{"cost": 0.23, "exact": true, "calls": 9}, {"cost": 0.249, "exact": true, "calls": 10}, {"cost": 0.153, "exact": false, "sem": null, "calls": 4}],
         "2000": [{"cost": 0.517, "exact": true, "calls": 10}, {"cost": 0.25, "exact": true, "calls": 4}, {"cost": 0.3, "exact": true, "calls": 6}],
         "10000": [{"cost": 0.358, "exact": true, "calls": 6}, {"cost": 0.342, "exact": true, "calls": 5}, {"cost": 0.362, "exact": true, "calls": 6}]
       },
       "quote-trap": {
         "500": [{"cost": 0.243, "exact": true, "calls": 9}, {"cost": 0.219, "exact": true, "calls": 8}, {"cost": 0.214, "exact": true, "calls": 7}],
         "2000": [{"cost": 0.386, "exact": true, "calls": 10}, {"cost": 0.375, "exact": true, "calls": 9}, {"cost": 0.406, "exact": true, "calls": 11}],
-        "10000": [{"cost": 0.455, "exact": false, "calls": 9}, {"cost": 0.371, "exact": true, "calls": 7}, {"cost": 0.944, "exact": true, "calls": 16}]
+        "10000": [{"cost": 0.455, "exact": false, "sem": null, "calls": 9}, {"cost": 0.371, "exact": true, "calls": 7}, {"cost": 0.944, "exact": true, "calls": 16}]
       },
       "rename-trap": {
         "500": [{"cost": 0.125, "exact": true, "calls": 4}, {"cost": 0.115, "exact": true, "calls": 5}, {"cost": 0.209, "exact": true, "calls": 9}],
@@ -330,8 +337,8 @@ const DATA = {
       },
       "composite": {
         "500": [{"cost": 0.694, "exact": true, "calls": 57}, {"cost": 0.459, "exact": true, "calls": 43}, {"cost": 0.638, "exact": true, "calls": 47}],
-        "2000": [{"cost": 0.486, "exact": false, "calls": 41}, {"cost": 0.825, "exact": true, "calls": 63}, {"cost": 0.717, "exact": true, "calls": 44}],
-        "10000": [{"cost": 0.714, "exact": true, "calls": 45}, {"cost": 0.668, "exact": false, "calls": 49}, {"cost": 0.597, "exact": true, "calls": 49}]
+        "2000": [{"cost": 0.43, "exact": false, "sem": true, "calls": 28}, {"cost": 0.778, "exact": false, "sem": true, "calls": 61}, {"cost": 0.458, "exact": true, "calls": 34}],
+        "10000": [{"cost": 0.563, "exact": true, "calls": 40}, {"cost": 0.752, "exact": false, "sem": true, "calls": 47}, {"cost": 0.881, "exact": false, "sem": true, "calls": 58}]
       },
       "delete-trap": {
         "500": [{"cost": 0.222, "exact": true, "calls": 17}, {"cost": 0.174, "exact": true, "calls": 6}, {"cost": 0.255, "exact": true, "calls": 15}],
@@ -397,7 +404,7 @@ const DATA = {
       }
     }
   }
-};
+  };
 
 const TASK_INFO = {
   "rename-trap": {
@@ -499,6 +506,24 @@ function trials(model, cond, task, size) {
 // Mean cost of a list of trials; null when the cell has no data.
 const mean = a => a.length ? a.reduce((s, x) => s + x.cost, 0) / a.length : null;
 
+// Suffix marker for a trial in tables/tooltips: nothing = byte-identical,
+// "*" = AST-equal (formatting-only divergence), "✗" = semantically wrong
+// output (silent failure), "?" = not byte-identical and unverifiable.
+const trialMark = t => t.exact ? "" : t.sem === false ? "✗" : t.sem == null ? "?" : "*";
+
+// Silent-failure / unverifiable counts for one condition under the current
+// model+task selection (all sizes pooled) — shown next to the legend entries.
+function failCounts(cond) {
+  let fails = 0, unknown = 0;
+  for (const size of SIZES)
+    for (const t of trials(state.model, cond, state.task, size)) {
+      if (t.exact) continue;
+      if (t.sem === false) fails++;
+      else if (t.sem == null) unknown++;
+    }
+  return { fails, unknown };
+}
+
 // Fill the task <select> from whatever tasks exist in DATA.
 function buildTaskSelect() {
   const sel = document.getElementById("taskSel");
@@ -596,8 +621,15 @@ function render() {
     el.push(`<path d="${pts.map((p, j) => `${j ? "L" : "M"}${p.x},${y(p.v)}`).join("")}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round"/>`);
     if (singleTask)
       for (const col of current)
-        for (const t of col.series[si].trials)
-          el.push(`<circle cx="${col.x}" cy="${y(t.cost)}" r="2.5" fill="${color}" opacity="0.35"/>`);
+        for (const t of col.series[si].trials) {
+          const cy = y(t.cost);
+          if (t.sem === false) {  // confirmed silent failure: red ✗ instead of a dot
+            const r = 3.5;
+            el.push(`<path d="M${col.x - r},${cy - r}L${col.x + r},${cy + r}M${col.x - r},${cy + r}L${col.x + r},${cy - r}" stroke="var(--fail)" stroke-width="1.8" stroke-linecap="round"/>`);
+          } else {
+            el.push(`<circle cx="${col.x}" cy="${cy}" r="2.5" fill="${color}" opacity="0.35"/>`);
+          }
+        }
     for (const p of pts)
       el.push(`<circle cx="${p.x}" cy="${y(p.v)}" r="4" fill="${color}" stroke="var(--surface-1)" stroke-width="2"/>`);
     const last = pts[pts.length - 1];
@@ -619,8 +651,13 @@ function render() {
   }
   svg.innerHTML = el.join("");
 
-  document.getElementById("legend").innerHTML = SERIES.map(s =>
-    `<span class="item"><span class="swatch" style="background:${cssColor(s.cssVar)}"></span>${s.label}</span>`).join("");
+  document.getElementById("legend").innerHTML = SERIES.map(s => {
+    const fc = failCounts(s.key);
+    return `<span class="item"><span class="swatch" style="background:${cssColor(s.cssVar)}"></span>${s.label}` +
+      (fc.fails ? `&ensp;<span style="color:var(--fail);font-weight:600">✗ ${fc.fails} silent fail${fc.fails > 1 ? "s" : ""}</span>` : "") +
+      (fc.unknown ? `&ensp;<span style="color:var(--text-muted)">? ${fc.unknown} unverified</span>` : "") +
+      `</span>`;
+  }).join("");
 
   const ti = document.getElementById("taskInfo");
   const info = TASK_INFO[state.task];
@@ -632,7 +669,7 @@ function render() {
   }
 
   document.getElementById("note").textContent =
-    (singleTask ? "Faint dots are individual trials; large markers are cell means. " :
+    (singleTask ? "Faint dots are individual trials (a red ✗ is a trial whose output was semantically wrong — a silent failure); large markers are cell means. " :
       "Each point is the mean over all 7 tasks × 3 trials at that size. ") +
     (state.model === "sonnet" && (state.task === "purge-blocks" || state.task === "__all__")
       ? "Note: sonnet no-bash on purge-blocks @ 10,000 lines required a raised per-trial budget ($8; the default $3 cap aborted five straight attempts) — its two clean trials cost $4.61 and $4.66."
@@ -646,7 +683,10 @@ function renderTable() {
     const cells = current.map(col => {
       const cs = col.series.find(x => x.key === s.key);
       if (cs.mean == null) return "<td>—</td>";
-      const tr = cs.trials.map(t => `$${t.cost.toFixed(2)}${t.exact ? "" : "*"}`).join(", ");
+      const tr = cs.trials.map(t => {
+        const label = `$${t.cost.toFixed(2)}${trialMark(t)}`;
+        return t.sem === false ? `<span style="color:var(--fail)">${label}</span>` : label;
+      }).join(", ");
       return `<td>$${cs.mean.toFixed(2)} <span style="color:var(--text-muted)">(${tr})</span></td>`;
     }).join("");
     return `<tr><td>${s.label}</td>${cells}</tr>`;
@@ -654,7 +694,7 @@ function renderTable() {
   document.getElementById("tableWrap").innerHTML =
     `<table><thead><tr><th>condition</th>${SIZES.map(s => `<th>${Number(s).toLocaleString("en-US")} lines — mean (trials)</th>`).join("")}</tr></thead>` +
     `<tbody>${rows}</tbody></table>` +
-    `<div class="note">* = trial completed but output was not byte-identical to target (see README for exact vs. semantic grading).</div>`;
+    `<div class="note">* = not byte-identical but AST-equal (formatting-only divergence) &nbsp;·&nbsp; ✗ = semantically wrong output (silent failure) &nbsp;·&nbsp; ? = not byte-identical, workdir pruned before the AST check (unverified). See README for exact vs. semantic grading.</div>`;
 }
 
 // --- hover: crosshair + tooltip --------------------------------------------
@@ -678,7 +718,7 @@ svg.addEventListener("mousemove", e => {
     best.series.map(s => s.mean == null ? "" :
       `<div class="row"><span class="dot" style="background:${s.color}"></span>` +
       `<span class="name">${s.key}</span><span class="val">$${s.mean.toFixed(2)}</span></div>` +
-      `<div class="trials">${s.trials.length} trials: ${s.trials.map(t => t.cost.toFixed(2) + (t.exact ? "" : "*")).join(", ")}</div>`
+      `<div class="trials">${s.trials.length} trials: ${s.trials.map(t => t.cost.toFixed(2) + trialMark(t)).join(", ")}</div>`
     ).join("");
   const wr = wrap.getBoundingClientRect();
   const scale = wr.width / W;

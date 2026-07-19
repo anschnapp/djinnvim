@@ -181,10 +181,12 @@ On a capable cheap model (Haiku), the Bash-armed baseline **silently corrupts fi
 |---|---|---|---|
 | Haiku keyhole | 49/62 | **59/62** | 3 |
 | Haiku baseline | 53/62 | 57/62 | **5** |
-| Sonnet keyhole | 61/63 | **63/63** ¹ | 0 |
-| Sonnet baseline | 61/63 | 61/63 | **2** |
+| Sonnet keyhole | 59/63 | **63/63** ¹ | 0 |
+| Sonnet baseline | 61/63 | 61/63 | ≤2 ² |
 
-¹ Both Sonnet keyhole misses were re-run with outputs kept: all divergences are AST-equal formatting (argument wrapping, a blank line).
+¹ Sonnet keyhole's two composite cells lost their outputs before the AST sweep, so both cells were fully re-run with outputs kept, and the re-runs replace the originals wholesale — kept regardless of outcome (the exact score dropped from 61 to 59 in the trade). All four non-exact re-run trials are AST-equal formatting (argument wrapping, blank lines), which is what makes the 63/63 verified rather than argued.
+
+² Sonnet baseline's two misses could not be AST-checked (their outputs were pruned before the sweep) — counted as non-passing in the semantic column, but not confirmed as real errors.
 
 Under exact-match grading keyhole and baseline look close; under semantic grading they diverge — **keyhole's misses are cosmetic, the baseline's are wrong code**. That asymmetry is the product bet: echo discipline turns errors visible before they land.
 
@@ -197,7 +199,7 @@ xychart-beta
     title "Sonnet 5 — mean cost per trial (USD)"
     x-axis ["500 lines", "2000 lines", "10000 lines"]
     y-axis "USD" 0 --> 1.4
-    line [0.34, 0.32, 0.34]
+    line [0.34, 0.31, 0.35]
     line [0.21, 0.28, 0.39]
     line [0.21, 0.56, 1.21]
 ```
@@ -241,11 +243,11 @@ Exact matches / clean trials. Keyhole's composite and move-multi misses are almo
 | bump-trap | 9/9 | 9/9 | 9/9 |
 | delete-trap | 9/9 | 8/9 | 9/9 |
 | quote-trap | 9/9 | 7/9 | 7/9 |
-| composite | 2/9 ² | 7/9 | 7/9 |
-| move-multi | 3/9 ² | 8/9 | 9/9 |
+| composite | 2/9 ³ | 7/9 | 7/9 |
+| move-multi | 3/9 ³ | 8/9 | 9/9 |
 | purge-blocks | 8/8 | 6/8 | 5/9 |
 
-² composite: 5 of 7 misses AST-equal (7/9 semantic); move-multi: 5 of 6 misses AST-equal (8/9 semantic).
+³ composite: 5 of 7 misses AST-equal (7/9 semantic); move-multi: 5 of 6 misses AST-equal (8/9 semantic).
 
 **Sonnet 5**
 
@@ -255,12 +257,12 @@ Exact matches / clean trials. Keyhole's composite and move-multi misses are almo
 | bump-trap | 9/9 | 9/9 | 9/9 |
 | delete-trap | 9/9 | 9/9 | 9/9 |
 | quote-trap | 9/9 | 8/9 | 9/9 |
-| composite | 7/9 ³ | 9/9 | 9/9 |
+| composite | 5/9 ⁴ | 9/9 | 9/9 |
 | move-multi | 9/9 | 9/9 | 9/9 |
-| purge-blocks | 9/9 | 8/9 | 8/8 ⁴ |
+| purge-blocks | 9/9 | 8/9 | 8/8 ⁵ |
 
-³ Both misses AST-equal formatting (9/9 semantic, confirmed by re-run with kept outputs).
-⁴ The two 10 000-line trials required a raised budget ($8) and cost $4.6 each; under the default $3 cap this cell had zero clean trials in five attempts.
+⁴ The 2 000/10 000-line cells are the whole-cell re-runs (see finding 1); all four misses AST-equal formatting (9/9 semantic).
+⁵ The two 10 000-line trials required a raised budget ($8) and cost $4.6 each; under the default $3 cap this cell had zero clean trials in five attempts.
 </details>
 
 <details>
@@ -269,6 +271,7 @@ Exact matches / clean trials. Keyhole's composite and move-multi misses are almo
 - Driver: headless Claude Code (`claude -p --output-format stream-json`); cost/token/tool-call numbers come from the CLI's own usage accounting, per trial.
 - Trials with harness aborts (session/usage limits, budget caps) are flagged and excluded from correctness scores; aborted cells were re-run.
 - "Semantic" = Python `ast` equality between output and target. For a handful of older trials the output files were not retained, so their semantic status is unknown and they count as misses; the semantic column is therefore a lower bound.
+- Where a cell's outputs were lost *and* the cell was later fully re-run with outputs kept, the re-run replaces the original cell wholesale — all 3 trials, kept regardless of outcome, never a per-trial retry. Applied to Sonnet keyhole composite @ 2 000/10 000 (which *lowered* the exact score).
 - n=3 per cell — directional, not publication statistics. Tasks are single-file generated Python; multi-file editing is future work.
 - The Haiku keyhole/baseline round ran on a slightly older Claude Code CLI than the rest of the grid; cross-round comparisons are indicative.
 - Model IDs: `claude-haiku-4-5`, `claude-sonnet-5` (see "Why no higher tier?" above for the deliberate Opus omission).
