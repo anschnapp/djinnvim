@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>djinnvim benchmark — cost explorer</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; padding: 24px 16px; display: flex; justify-content: center; }
+  .viz-root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #8a8983;
+    --grid: #e6e5e1;
+    --axis: #c9c8c2;
+    --series-keyhole: #2a78d6;
+    --series-baseline: #008300;
+    --series-nobash: #e87ba4;
+    --tooltip-bg: #ffffff;
+    --tooltip-border: #d8d7d2;
+    --control-bg: #f1f0ec;
+    --control-active: #ffffff;
+    --control-border: #d8d7d2;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    max-width: 860px; width: 100%;
+    border-radius: 12px; padding: 20px 24px 16px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-1: #1a1a19;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted: #8b8a81;
+      --grid: #2e2e2c;
+      --axis: #45443f;
+      --series-keyhole: #3987e5;
+      --series-baseline: #008300;
+      --series-nobash: #d55181;
+      --tooltip-bg: #242422;
+      --tooltip-border: #45443f;
+      --control-bg: #242422;
+      --control-active: #333330;
+      --control-border: #45443f;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #8b8a81;
+    --grid: #2e2e2c;
+    --axis: #45443f;
+    --series-keyhole: #3987e5;
+    --series-baseline: #008300;
+    --series-nobash: #d55181;
+    --tooltip-bg: #242422;
+    --tooltip-border: #45443f;
+    --control-bg: #242422;
+    --control-active: #333330;
+    --control-border: #45443f;
+  }
+  h1 { font-size: 1.1rem; font-weight: 650; }
+  .subtitle { color: var(--text-secondary); font-size: 0.85rem; margin-top: 2px; }
+  .filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 16px 0 4px; }
+  .seg { display: inline-flex; background: var(--control-bg); border: 1px solid var(--control-border); border-radius: 8px; padding: 2px; }
+  .seg button {
+    font: inherit; font-size: 0.82rem; color: var(--text-secondary);
+    background: transparent; border: 0; border-radius: 6px; padding: 5px 12px; cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--control-active); color: var(--text-primary); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+  select {
+    font: inherit; font-size: 0.82rem; color: var(--text-primary);
+    background: var(--control-bg); border: 1px solid var(--control-border); border-radius: 8px; padding: 6px 10px;
+  }
+  .legend { display: flex; gap: 18px; margin: 10px 0 2px; font-size: 0.8rem; color: var(--text-secondary); flex-wrap: wrap; }
+  .legend .item { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .swatch { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+  .chart-wrap { position: relative; }
+  svg { width: 100%; height: auto; display: block; }
+  .tooltip {
+    position: absolute; pointer-events: none; display: none;
+    background: var(--tooltip-bg); border: 1px solid var(--tooltip-border);
+    border-radius: 8px; padding: 8px 10px; font-size: 0.75rem; line-height: 1.5;
+    box-shadow: 0 4px 14px rgba(0,0,0,.15); min-width: 190px; z-index: 2;
+  }
+  .tooltip .tt-title { font-weight: 650; margin-bottom: 4px; }
+  .tooltip .row { display: flex; align-items: baseline; gap: 6px; }
+  .tooltip .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; align-self: center; }
+  .tooltip .name { color: var(--text-secondary); flex: 1 1 auto; }
+  .tooltip .val { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .tooltip .trials { color: var(--text-muted); font-variant-numeric: tabular-nums; margin-left: 14px; }
+  .note { color: var(--text-muted); font-size: 0.72rem; margin-top: 10px; line-height: 1.5; }
+  .task-info {
+    margin-top: 12px; padding: 10px 14px; font-size: 0.8rem; line-height: 1.55;
+    background: var(--control-bg); border: 1px solid var(--control-border); border-radius: 8px;
+  }
+  .task-info .ti-name { font-weight: 650; }
+  .task-info p { color: var(--text-secondary); margin: 6px 0; }
+  .task-info p b, .task-info p em { color: var(--text-primary); }
+  .task-info blockquote {
+    margin: 6px 0; padding: 2px 12px; font-style: italic;
+    color: var(--text-secondary); border-left: 3px solid var(--control-border);
+  }
+  .task-info code {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 0.92em;
+    background: var(--surface-1); border: 1px solid var(--control-border);
+    border-radius: 4px; padding: 0 4px;
+  }
+  .task-info pre {
+    background: var(--surface-1); border: 1px solid var(--control-border);
+    border-radius: 6px; padding: 8px 12px; margin: 6px 0; overflow-x: auto;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 0.74rem; line-height: 1.5;
+  }
+  .task-info pre code { background: none; border: 0; padding: 0; }
+  details { margin-top: 12px; font-size: 0.8rem; }
+  summary { cursor: pointer; color: var(--text-secondary); }
+  table { border-collapse: collapse; margin-top: 8px; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 4px 10px; border-bottom: 1px solid var(--grid); }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--text-secondary); font-weight: 600; font-size: 0.75rem; }
+  text { fill: var(--text-secondary); font-family: inherit; }
+</style>
+</head>
+<body>
+<div class="viz-root">
+  <h1>djinnvim benchmark — cost per trial</h1>
+  <div class="subtitle">Mean API cost (USD) per completed trial vs. file size. Aborted trials excluded.</div>
+
+  <div class="filters">
+    <div class="seg" role="group" aria-label="Model" id="modelSeg">
+      <button data-model="haiku" aria-pressed="true">Haiku 4.5</button>
+      <button data-model="sonnet" aria-pressed="false">Sonnet 5</button>
+    </div>
+    <select id="taskSel" aria-label="Task">
+      <option value="__all__">All tasks (mean)</option>
+    </select>
+  </div>
+
+  <div class="legend" id="legend"></div>
+
+  <div class="chart-wrap">
+    <svg id="chart" viewBox="0 0 760 400" role="img" aria-label="Line chart of mean cost per trial versus file size for the keyhole, baseline and no-bash conditions"></svg>
+    <div class="tooltip" id="tooltip"></div>
+  </div>
+
+  <div class="task-info" id="taskInfo" hidden></div>
+
+  <div class="note" id="note"></div>
+
+  <details>
+    <summary>Data table (current view)</summary>
+    <div id="tableWrap"></div>
+  </details>
+</div>
+
+<script>
+const DATA = {"haiku":{"baseline":{"bump-trap":{"500":[{"cost":0.036,"exact":true,"calls":3},{"cost":0.054,"exact":true,"calls":4},{"cost":0.037,"exact":true,"calls":3}],"2000":[{"cost":0.052,"exact":true,"calls":5},{"cost":0.059,"exact":true,"calls":7},{"cost":0.071,"exact":true,"calls":3}],"10000":[{"cost":0.12,"exact":true,"calls":6},{"cost":0.106,"exact":true,"calls":5},{"cost":0.106,"exact":true,"calls":5}]},"composite":{"500":[{"cost":0.147,"exact":true,"calls":23},{"cost":0.144,"exact":true,"calls":22},{"cost":0.117,"exact":true,"calls":17}],"2000":[{"cost":0.433,"exact":true,"calls":54},{"cost":0.429,"exact":true,"calls":55},{"cost":0.428,"exact":true,"calls":53}],"10000":[{"cost":0.327,"exact":false,"calls":32},{"cost":0.285,"exact":true,"calls":25},{"cost":0.328,"exact":false,"calls":31}]},"delete-trap":{"500":[{"cost":0.051,"exact":true,"calls":6},{"cost":0.05,"exact":true,"calls":6},{"cost":0.05,"exact":true,"calls":6}],"2000":[{"cost":0.156,"exact":false,"calls":10},{"cost":0.168,"exact":true,"calls":19},{"cost":0.167,"exact":true,"calls":19}],"10000":[{"cost":0.147,"exact":true,"calls":9},{"cost":0.117,"exact":true,"calls":7},{"cost":0.146,"exact":true,"calls":11}]},"move-multi":{"500":[{"cost":0.081,"exact":true,"calls":6},{"cost":0.1,"exact":true,"calls":5},{"cost":0.07,"exact":true,"calls":6}],"2000":[{"cost":0.164,"exact":false,"calls":5},{"cost":0.111,"exact":true,"calls":6},{"cost":0.131,"exact":true,"calls":8}],"10000":[{"cost":0.216,"exact":true,"calls":18},{"cost":0.23,"exact":true,"calls":20},{"cost":0.175,"exact":true,"calls":14}]},"purge-blocks":{"500":[{"cost":0.075,"exact":true,"calls":9},{"cost":0.123,"exact":false,"calls":17}],"2000":[{"cost":0.258,"exact":true,"calls":34},{"cost":0.264,"exact":true,"calls":32},{"cost":0.208,"exact":true,"calls":18}],"10000":[{"cost":0.148,"exact":true,"calls":10},{"cost":0.216,"exact":false,"calls":16},{"cost":0.154,"exact":true,"calls":10}]},"quote-trap":{"500":[{"cost":0.084,"exact":true,"calls":10},{"cost":0.055,"exact":false,"calls":4},{"cost":0.155,"exact":true,"calls":11}],"2000":[{"cost":0.206,"exact":true,"calls":26},{"cost":0.237,"exact":true,"calls":31},{"cost":0.08,"exact":true,"calls":4}],"10000":[{"cost":0.104,"exact":true,"calls":4},{"cost":0.106,"exact":false,"calls":4},{"cost":0.106,"exact":true,"calls":4}]},"rename-trap":{"500":[{"cost":0.048,"exact":true,"calls":5},{"cost":0.065,"exact":true,"calls":8},{"cost":0.042,"exact":false,"calls":4}],"2000":[{"cost":0.076,"exact":true,"calls":4},{"cost":0.095,"exact":true,"calls":6},{"cost":0.199,"exact":true,"calls":23}],"10000":[{"cost":0.161,"exact":true,"calls":11},{"cost":0.112,"exact":true,"calls":5},{"cost":0.073,"exact":true,"calls":8}]}},"keyhole":{"bump-trap":{"500":[{"cost":0.065,"exact":true,"calls":13},{"cost":0.069,"exact":true,"calls":16},{"cost":0.042,"exact":true,"calls":8}],"2000":[{"cost":0.05,"exact":true,"calls":12},{"cost":0.044,"exact":true,"calls":8},{"cost":0.043,"exact":true,"calls":9}],"10000":[{"cost":0.054,"exact":true,"calls":10},{"cost":0.052,"exact":true,"calls":9},{"cost":0.043,"exact":true,"calls":9}]},"composite":{"500":[{"cost":0.308,"exact":true,"calls":71},{"cost":0.151,"exact":false,"calls":40},{"cost":0.374,"exact":true,"calls":95}],"2000":[{"cost":0.234,"exact":false,"calls":66},{"cost":0.16,"exact":false,"calls":45},{"cost":0.134,"exact":false,"calls":30}],"10000":[{"cost":0.199,"exact":false,"calls":43},{"cost":0.154,"exact":false,"calls":30},{"cost":0.197,"exact":false,"calls":41}]},"delete-trap":{"500":[{"cost":0.044,"exact":true,"calls":9},{"cost":0.048,"exact":true,"calls":9},{"cost":0.039,"exact":true,"calls":6}],"2000":[{"cost":0.039,"exact":true,"calls":6},{"cost":0.04,"exact":true,"calls":6},{"cost":0.049,"exact":true,"calls":9}],"10000":[{"cost":0.077,"exact":true,"calls":15},{"cost":0.047,"exact":true,"calls":8},{"cost":0.046,"exact":true,"calls":7}]},"move-multi":{"500":[{"cost":0.388,"exact":false,"calls":77},{"cost":0.243,"exact":false,"calls":59},{"cost":0.203,"exact":false,"calls":49}],"2000":[{"cost":0.276,"exact":true,"calls":62},{"cost":0.325,"exact":false,"calls":79},{"cost":0.136,"exact":true,"calls":35}],"10000":[{"cost":0.276,"exact":false,"calls":48},{"cost":0.42,"exact":true,"calls":99},{"cost":0.127,"exact":false,"calls":29}]},"purge-blocks":{"500":[{"cost":0.094,"exact":true,"calls":21},{"cost":0.072,"exact":true,"calls":15}],"2000":[{"cost":0.064,"exact":true,"calls":11},{"cost":0.083,"exact":true,"calls":19},{"cost":0.107,"exact":true,"calls":20}],"10000":[{"cost":0.095,"exact":true,"calls":18},{"cost":0.091,"exact":true,"calls":18},{"cost":0.129,"exact":true,"calls":25}]},"quote-trap":{"500":[{"cost":0.036,"exact":true,"calls":5},{"cost":0.041,"exact":true,"calls":5},{"cost":0.035,"exact":true,"calls":5}],"2000":[{"cost":0.039,"exact":true,"calls":5},{"cost":0.052,"exact":true,"calls":7},{"cost":0.039,"exact":true,"calls":5}],"10000":[{"cost":0.04,"exact":true,"calls":5},{"cost":0.054,"exact":true,"calls":7},{"cost":0.039,"exact":true,"calls":5}]},"rename-trap":{"500":[{"cost":0.042,"exact":true,"calls":6},{"cost":0.037,"exact":true,"calls":5},{"cost":0.039,"exact":true,"calls":5}],"2000":[{"cost":0.041,"exact":true,"calls":5},{"cost":0.043,"exact":true,"calls":6},{"cost":0.042,"exact":true,"calls":5}],"10000":[{"cost":0.038,"exact":true,"calls":5},{"cost":0.043,"exact":true,"calls":5},{"cost":0.041,"exact":true,"calls":5}]}},"no-bash":{"bump-trap":{"500":[{"cost":0.032,"exact":true,"calls":3},{"cost":0.033,"exact":true,"calls":3},{"cost":0.036,"exact":true,"calls":3}],"2000":[{"cost":0.063,"exact":true,"calls":3},{"cost":0.062,"exact":true,"calls":3},{"cost":0.067,"exact":true,"calls":3}],"10000":[{"cost":0.101,"exact":true,"calls":5},{"cost":0.108,"exact":true,"calls":6},{"cost":0.105,"exact":true,"calls":5}]},"composite":{"500":[{"cost":0.126,"exact":true,"calls":22},{"cost":0.096,"exact":true,"calls":17},{"cost":0.104,"exact":true,"calls":17}],"2000":[{"cost":0.357,"exact":false,"calls":49},{"cost":0.404,"exact":true,"calls":54},{"cost":0.425,"exact":true,"calls":54}],"10000":[{"cost":1.048,"exact":false,"calls":119},{"cost":1.203,"exact":true,"calls":231},{"cost":1.482,"exact":true,"calls":107}]},"delete-trap":{"500":[{"cost":0.045,"exact":true,"calls":6},{"cost":0.044,"exact":true,"calls":6},{"cost":0.049,"exact":true,"calls":6}],"2000":[{"cost":0.152,"exact":true,"calls":18},{"cost":0.15,"exact":true,"calls":19},{"cost":0.164,"exact":true,"calls":19}],"10000":[{"cost":1.258,"exact":true,"calls":149},{"cost":0.85,"exact":true,"calls":135},{"cost":1.208,"exact":true,"calls":114}]},"move-multi":{"500":[{"cost":0.087,"exact":true,"calls":7},{"cost":0.059,"exact":true,"calls":5},{"cost":0.081,"exact":true,"calls":6}],"2000":[{"cost":0.155,"exact":true,"calls":5},{"cost":0.112,"exact":true,"calls":8},{"cost":0.123,"exact":true,"calls":9}],"10000":[{"cost":0.197,"exact":true,"calls":19},{"cost":0.173,"exact":true,"calls":19},{"cost":0.26,"exact":true,"calls":22}]},"purge-blocks":{"500":[{"cost":0.098,"exact":true,"calls":9},{"cost":0.066,"exact":false,"calls":9},{"cost":0.076,"exact":true,"calls":10}],"2000":[{"cost":0.23,"exact":true,"calls":30},{"cost":0.239,"exact":true,"calls":33},{"cost":0.246,"exact":true,"calls":31}],"10000":[{"cost":0.894,"exact":false,"calls":38},{"cost":0.877,"exact":false,"calls":68},{"cost":1.049,"exact":false,"calls":50}]},"quote-trap":{"500":[{"cost":0.094,"exact":true,"calls":18},{"cost":0.075,"exact":false,"calls":25},{"cost":0.134,"exact":true,"calls":24}],"2000":[{"cost":0.194,"exact":true,"calls":26},{"cost":0.067,"exact":false,"calls":2},{"cost":0.215,"exact":true,"calls":27}],"10000":[{"cost":0.299,"exact":true,"calls":33},{"cost":0.353,"exact":true,"calls":46},{"cost":0.525,"exact":true,"calls":38}]},"rename-trap":{"500":[{"cost":0.038,"exact":true,"calls":4},{"cost":0.042,"exact":true,"calls":8},{"cost":0.075,"exact":true,"calls":8}],"2000":[{"cost":0.078,"exact":true,"calls":4},{"cost":0.132,"exact":true,"calls":20},{"cost":0.08,"exact":true,"calls":4}],"10000":[{"cost":0.175,"exact":true,"calls":13},{"cost":0.116,"exact":true,"calls":6},{"cost":0.117,"exact":true,"calls":6}]}}},"opus":{"keyhole":{"purge-blocks":{"500":[{"cost":0.353,"exact":true,"calls":16},{"cost":0.584,"exact":true,"calls":28}]}}},"sonnet":{"baseline":{"bump-trap":{"500":[{"cost":0.08,"exact":true,"calls":2},{"cost":0.081,"exact":true,"calls":2},{"cost":0.079,"exact":true,"calls":2}],"2000":[{"cost":0.095,"exact":true,"calls":3},{"cost":0.103,"exact":true,"calls":4},{"cost":0.08,"exact":true,"calls":2}],"10000":[{"cost":0.101,"exact":true,"calls":3},{"cost":0.082,"exact":true,"calls":2},{"cost":0.08,"exact":true,"calls":2}]},"composite":{"500":[{"cost":0.439,"exact":true,"calls":22},{"cost":0.398,"exact":true,"calls":20},{"cost":0.365,"exact":true,"calls":17}],"2000":[{"cost":0.403,"exact":true,"calls":6},{"cost":0.41,"exact":true,"calls":10},{"cost":0.403,"exact":true,"calls":7}],"10000":[{"cost":0.553,"exact":true,"calls":10},{"cost":0.688,"exact":true,"calls":16},{"cost":0.648,"exact":true,"calls":17}]},"delete-trap":{"500":[{"cost":0.182,"exact":true,"calls":7},{"cost":0.18,"exact":true,"calls":7},{"cost":0.192,"exact":true,"calls":10}],"2000":[{"cost":0.259,"exact":true,"calls":5},{"cost":0.265,"exact":true,"calls":5},{"cost":0.154,"exact":true,"calls":7}],"10000":[{"cost":0.371,"exact":true,"calls":6},{"cost":0.356,"exact":true,"calls":6},{"cost":0.211,"exact":true,"calls":9}]},"move-multi":{"500":[{"cost":0.225,"exact":true,"calls":7},{"cost":0.207,"exact":true,"calls":8},{"cost":0.229,"exact":true,"calls":8}],"2000":[{"cost":0.364,"exact":true,"calls":9},{"cost":0.294,"exact":true,"calls":6},{"cost":0.25,"exact":true,"calls":4}],"10000":[{"cost":0.565,"exact":true,"calls":15},{"cost":0.645,"exact":true,"calls":17},{"cost":0.568,"exact":true,"calls":15}]},"purge-blocks":{"500":[{"cost":0.23,"exact":true,"calls":9},{"cost":0.249,"exact":true,"calls":10},{"cost":0.153,"exact":false,"calls":4}],"2000":[{"cost":0.517,"exact":true,"calls":10},{"cost":0.25,"exact":true,"calls":4},{"cost":0.3,"exact":true,"calls":6}],"10000":[{"cost":0.358,"exact":true,"calls":6},{"cost":0.342,"exact":true,"calls":5},{"cost":0.362,"exact":true,"calls":6}]},"quote-trap":{"500":[{"cost":0.243,"exact":true,"calls":9},{"cost":0.219,"exact":true,"calls":8},{"cost":0.214,"exact":true,"calls":7}],"2000":[{"cost":0.386,"exact":true,"calls":10},{"cost":0.375,"exact":true,"calls":9},{"cost":0.406,"exact":true,"calls":11}],"10000":[{"cost":0.455,"exact":false,"calls":9},{"cost":0.371,"exact":true,"calls":7},{"cost":0.944,"exact":true,"calls":16}]},"rename-trap":{"500":[{"cost":0.125,"exact":true,"calls":4},{"cost":0.115,"exact":true,"calls":5},{"cost":0.209,"exact":true,"calls":9}],"2000":[{"cost":0.136,"exact":true,"calls":6},{"cost":0.158,"exact":true,"calls":6},{"cost":0.275,"exact":true,"calls":5}],"10000":[{"cost":0.14,"exact":true,"calls":5},{"cost":0.144,"exact":true,"calls":5},{"cost":0.153,"exact":true,"calls":6}]}},"keyhole":{"bump-trap":{"500":[{"cost":0.157,"exact":true,"calls":10},{"cost":0.135,"exact":true,"calls":8},{"cost":0.18,"exact":true,"calls":8}],"2000":[{"cost":0.101,"exact":true,"calls":6},{"cost":0.104,"exact":true,"calls":6},{"cost":0.102,"exact":true,"calls":6}],"10000":[{"cost":0.157,"exact":true,"calls":10},{"cost":0.116,"exact":true,"calls":6},{"cost":0.102,"exact":true,"calls":6}]},"composite":{"500":[{"cost":0.694,"exact":true,"calls":57},{"cost":0.459,"exact":true,"calls":43},{"cost":0.638,"exact":true,"calls":47}],"2000":[{"cost":0.486,"exact":false,"calls":41},{"cost":0.825,"exact":true,"calls":63},{"cost":0.717,"exact":true,"calls":44}],"10000":[{"cost":0.714,"exact":true,"calls":45},{"cost":0.668,"exact":false,"calls":49},{"cost":0.597,"exact":true,"calls":49}]},"delete-trap":{"500":[{"cost":0.222,"exact":true,"calls":17},{"cost":0.174,"exact":true,"calls":6},{"cost":0.255,"exact":true,"calls":15}],"2000":[{"cost":0.254,"exact":true,"calls":12},{"cost":0.222,"exact":true,"calls":13},{"cost":0.149,"exact":true,"calls":7}],"10000":[{"cost":0.326,"exact":true,"calls":12},{"cost":0.192,"exact":true,"calls":9},{"cost":0.197,"exact":true,"calls":8}]},"move-multi":{"500":[{"cost":0.464,"exact":true,"calls":30},{"cost":0.635,"exact":true,"calls":39},{"cost":0.619,"exact":true,"calls":32}],"2000":[{"cost":0.463,"exact":true,"calls":27},{"cost":0.398,"exact":true,"calls":29},{"cost":0.44,"exact":true,"calls":25}],"10000":[{"cost":0.412,"exact":true,"calls":27},{"cost":0.474,"exact":true,"calls":27},{"cost":0.552,"exact":true,"calls":32}]},"purge-blocks":{"500":[{"cost":0.188,"exact":true,"calls":11},{"cost":0.428,"exact":true,"calls":31},{"cost":0.536,"exact":true,"calls":50}],"2000":[{"cost":0.342,"exact":true,"calls":11},{"cost":0.351,"exact":true,"calls":16},{"cost":0.399,"exact":true,"calls":26}],"10000":[{"cost":0.333,"exact":true,"calls":20},{"cost":0.451,"exact":true,"calls":23},{"cost":0.46,"exact":true,"calls":28}]},"quote-trap":{"500":[{"cost":0.356,"exact":true,"calls":30},{"cost":0.195,"exact":true,"calls":7},{"cost":0.281,"exact":true,"calls":13}],"2000":[{"cost":0.295,"exact":true,"calls":18},{"cost":0.432,"exact":true,"calls":25},{"cost":0.345,"exact":true,"calls":17}],"10000":[{"cost":0.27,"exact":true,"calls":15},{"cost":0.275,"exact":true,"calls":13},{"cost":0.303,"exact":true,"calls":21}]},"rename-trap":{"500":[{"cost":0.111,"exact":true,"calls":5},{"cost":0.21,"exact":true,"calls":7},{"cost":0.115,"exact":true,"calls":5}],"2000":[{"cost":0.134,"exact":true,"calls":6},{"cost":0.133,"exact":true,"calls":6},{"cost":0.127,"exact":true,"calls":6}],"10000":[{"cost":0.134,"exact":true,"calls":6},{"cost":0.139,"exact":true,"calls":6},{"cost":0.185,"exact":true,"calls":6}]}},"no-bash":{"bump-trap":{"500":[{"cost":0.102,"exact":true,"calls":5},{"cost":0.096,"exact":true,"calls":5},{"cost":0.096,"exact":true,"calls":5}],"2000":[{"cost":0.087,"exact":true,"calls":4},{"cost":0.082,"exact":true,"calls":3},{"cost":0.072,"exact":true,"calls":2}],"10000":[{"cost":0.083,"exact":true,"calls":3},{"cost":0.087,"exact":true,"calls":4},{"cost":0.087,"exact":true,"calls":4}]},"composite":{"500":[{"cost":0.386,"exact":true,"calls":21},{"cost":0.358,"exact":true,"calls":20},{"cost":0.392,"exact":true,"calls":21}],"2000":[{"cost":0.976,"exact":true,"calls":56},{"cost":1.3,"exact":true,"calls":52},{"cost":1.242,"exact":true,"calls":48}],"10000":[{"cost":1.233,"exact":true,"calls":100},{"cost":1.266,"exact":true,"calls":94},{"cost":1.214,"exact":true,"calls":93}]},"delete-trap":{"500":[{"cost":0.151,"exact":true,"calls":6},{"cost":0.175,"exact":true,"calls":8},{"cost":0.151,"exact":true,"calls":6}],"2000":[{"cost":0.47,"exact":true,"calls":22},{"cost":0.478,"exact":true,"calls":21},{"cost":0.441,"exact":true,"calls":19}],"10000":[{"cost":0.871,"exact":true,"calls":88},{"cost":1.041,"exact":true,"calls":91},{"cost":1.814,"exact":true,"calls":88}]},"move-multi":{"500":[{"cost":0.183,"exact":true,"calls":6},{"cost":0.216,"exact":true,"calls":6},{"cost":0.21,"exact":true,"calls":8}],"2000":[{"cost":0.264,"exact":true,"calls":6},{"cost":0.337,"exact":true,"calls":7},{"cost":0.295,"exact":true,"calls":7}],"10000":[{"cost":0.492,"exact":true,"calls":13},{"cost":0.51,"exact":true,"calls":13},{"cost":0.49,"exact":true,"calls":12}]},"purge-blocks":{"500":[{"cost":0.187,"exact":true,"calls":8},{"cost":0.183,"exact":true,"calls":8},{"cost":0.158,"exact":true,"calls":8}],"2000":[{"cost":0.864,"exact":true,"calls":32},{"cost":0.706,"exact":true,"calls":34},{"cost":0.742,"exact":true,"calls":33}],"10000":[{"cost":4.611,"exact":true,"calls":136},{"cost":4.658,"exact":true,"calls":138}]},"quote-trap":{"500":[{"cost":0.284,"exact":true,"calls":3},{"cost":0.337,"exact":true,"calls":27},{"cost":0.299,"exact":true,"calls":19}],"2000":[{"cost":0.688,"exact":true,"calls":27},{"cost":0.795,"exact":true,"calls":31},{"cost":0.414,"exact":true,"calls":20}],"10000":[{"cost":1.485,"exact":true,"calls":48},{"cost":1.406,"exact":true,"calls":50},{"cost":1.766,"exact":true,"calls":38}]},"rename-trap":{"500":[{"cost":0.163,"exact":true,"calls":10},{"cost":0.139,"exact":true,"calls":8},{"cost":0.136,"exact":true,"calls":8}],"2000":[{"cost":0.485,"exact":true,"calls":24},{"cost":0.565,"exact":true,"calls":27},{"cost":0.505,"exact":true,"calls":17}],"10000":[{"cost":0.399,"exact":true,"calls":8},{"cost":0.158,"exact":true,"calls":7},{"cost":0.485,"exact":true,"calls":11}]}}}};
+
+const TASK_INFO = {
+  "rename-trap": {
+    title: "rename-trap — rename a function across scattered call sites",
+    html: `<blockquote>"In pipeline.py, rename the function <code>fetch_records</code> to <code>load_records</code> — its definition and all its call sites."</blockquote>
+<p>The tempting one-shot: <code>sed -i 's/fetch_records/load_records/g' pipeline.py</code>. But the file also contains a <em>different</em> function with a colliding prefix:</p>
+<pre><code>def fetch_records_cached(db, limit):   # a separate function —
+    if limit not in _CACHE:            # must keep its name
+        _CACHE[limit] = fetch_records(db, limit)   # only THIS call renames</code></pre>
+<p>Without a word boundary (<code>\\bfetch_records\\b</code>) the sed also produces <code>load_records_cached</code> — everywhere it appears. The file still parses, nothing errors, the agent reports success: a <b>silent corruption</b>. This exact miss happened in the benchmark (Haiku baseline, 500 lines).</p>`,
+  },
+  "bump-trap": {
+    title: "bump-trap — change a default parameter value",
+    html: `<blockquote>"In pipeline.py, the default timeout of <code>send_request</code> is too low: change it from 30 to 90."</blockquote>
+<p>Only <b>one</b> line may change:</p>
+<pre><code>def send_request(url, timeout=30, retries=3):   # ← the default: 30 → 90</code></pre>
+<p>But the file is salted with lookalikes that a broad replace destroys: half the call sites pass an <em>explicit</em> <code>timeout=30</code> — a deliberate choice by that caller, which must survive a change of the default — and an unrelated constant matches too:</p>
+<pre><code>POLL_INTERVAL = 30                         # not a timeout — keep
+    return send_request(url, timeout=30)   # caller's explicit choice — keep
+    return send_request(url)               # uses the default — keep</code></pre>
+<p>A file-wide <code>s/timeout=30/timeout=90/</code> or <code>s/30/90/</code> "succeeds", changes the meaning of dozens of call sites, and nothing crashes.</p>`,
+  },
+  "delete-trap": {
+    title: "delete-trap — remove all debug calls",
+    html: `<blockquote>"Remove all the <code>log_debug</code> calls from pipeline.py (keep the <code>log_debug</code> function definition itself)."</blockquote>
+<p>The tempting one-shot deletes every line matching <code>log_debug</code>. Two things break silently:</p>
+<pre><code>def log_debug(msg):                        # the definition — must survive
+    print(f'DEBUG: {msg}')
+
+    log_debug('enter check_totals')        # ← these lines go
+    summary = log_debug_summary(stats)     # different function — must survive</code></pre>
+<p><code>log_debug_summary</code> is a name-collision decoy: a pattern like <code>/log_debug/d</code> deletes its call sites too, breaking live code paths — and deletes the definition the prompt explicitly said to keep.</p>`,
+  },
+  "quote-trap": {
+    title: "quote-trap — normalize quote style file-wide",
+    html: `<blockquote>"In pipeline.py, convert every single-quoted string literal to double quotes."</blockquote>
+<p>Thousands of quote changes — clearly a job for one regex like <code>s/'([^']*)'/"\\1"/g</code>. The trap is that comments contain <b>apostrophes</b>:</p>
+<pre><code>    # note: caller's dict is not copied
+    return f'{label}: {count}'</code></pre>
+<p>An apostrophe is an unpaired single quote: the regex pairs <code>caller'</code> with the next quote it finds and rewrites the wrong span — or, applied over the whole file, shifts every subsequent match off by one. The correct answer must treat comment lines differently from code, which no single blind regex does.</p>`,
+  },
+  "composite": {
+    title: "composite — six heterogeneous edits in one task",
+    html: `<p>One prompt, six numbered changes — a compressed version of a real refactoring request: rename <code>fetch_records</code> → <code>load_records</code> (with the <code>_cached</code> decoy present), change a default value, delete all <code>log_debug</code> calls, change a constant, insert a new constant at a stated position, and thread a <code>logger</code> argument through <b>every</b> <code>send_request</code> call site. The last one is the structural trap — some call sites are multi-line:</p>
+<pre><code>    response = send_request(
+        endpoint,                # a new \`logger,\` argument must be
+        timeout=7,               # inserted here — line-based sed
+    )                            # cannot see "the second argument"</code></pre>
+<p>Line-oriented tools match single lines; "add a second argument" on a call spread over four lines defeats them. This is the most representative task of real usage — and the one where exact-match grading mostly disagrees with semantic grading (argument-wrapping styles differ while the program is identical).</p>`,
+  },
+  "move-multi": {
+    title: "move-multi — gather scattered functions",
+    html: `<blockquote>"In pipeline.py, the three <code>check_*</code> functions are scattered through the file. Move them so they sit directly above <code>run_checks</code>, in this order: <code>check_ids</code>, <code>check_totals</code>, <code>check_names</code>. Keep exactly two blank lines between top-level functions and change nothing else."</blockquote>
+<p>There is <b>no search-and-replace answer at all</b>: nothing changes textually, text only <em>moves</em>. The solver must delete three function bodies from three different places and reinsert them at a fourth, in a stated order, with exact blank-line discipline — while never seeing the whole file. This is cut/yank/put register territory (djinnvim's home turf), and for read-the-file approaches the cost of "find everything, rewrite the region" grows with file size.</p>`,
+  },
+  "purge-blocks": {
+    title: "purge-blocks — delete every deprecated function",
+    html: `<blockquote>"In pipeline.py, several functions are marked deprecated with a <code># DEPRECATED: …</code> comment on the line directly above their def. Remove every deprecated function entirely — the comment line and the whole function below it. Keep exactly two blank lines between the remaining top-level definitions."</blockquote>
+<p>At 10 000 lines this means removing <b>dozens</b> of variable-length multi-line blocks:</p>
+<pre><code># DEPRECATED: use resolve_offsets instead
+def normalize_totals(rows):
+    for row in rows:
+        ...                     # block length varies — no fixed line count</code></pre>
+<p>The classic shortcut <code>sed '/DEPRECATED/,/^$/d'</code> deletes from the marker to the next blank line — but functions are separated by <em>two</em> blank lines, so every deletion site leaves a stray blank behind (or eats one too many): dozens of small, silent, off-by-one wounds. djinnvim's answer is a single anchored batch edit — <code>at each /# DEPRECATED/ dap</code> (<em>delete around paragraph</em> at every match) — while a Bash-less native agent must grind through every block by hand. This task produced the starkest cost numbers in the sweep (see the README's finding 3).</p>`,
+  },
+};
+
+const SERIES = [
+  { key: "keyhole",  label: "keyhole (djinnvim)", cssVar: "--series-keyhole" },
+  { key: "baseline", label: "baseline (all tools)", cssVar: "--series-baseline" },
+  { key: "no-bash",  label: "no-bash (Bash denied)", cssVar: "--series-nobash" },
+];
+const SIZES = ["500", "2000", "10000"];
+const state = { model: "haiku", task: "__all__" };
+
+const svg = document.getElementById("chart");
+const tooltip = document.getElementById("tooltip");
+const wrap = document.querySelector(".chart-wrap");
+
+const cssColor = v => getComputedStyle(document.querySelector(".viz-root")).getPropertyValue(v).trim();
+
+function trials(model, cond, task, size) {
+  if (task === "__all__") {
+    const out = [];
+    const tasks = DATA[model][cond] || {};
+    for (const t of Object.keys(tasks)) out.push(...(tasks[t][size] || []));
+    return out;
+  }
+  return ((DATA[model][cond] || {})[task] || {})[size] || [];
+}
+const mean = a => a.length ? a.reduce((s, x) => s + x.cost, 0) / a.length : null;
+
+function buildTaskSelect() {
+  const sel = document.getElementById("taskSel");
+  const tasks = new Set();
+  for (const m of Object.keys(DATA))
+    for (const c of Object.keys(DATA[m]))
+      for (const t of Object.keys(DATA[m][c])) tasks.add(t);
+  for (const t of [...tasks].sort()) {
+    const o = document.createElement("option");
+    o.value = t; o.textContent = t;
+    sel.appendChild(o);
+  }
+  sel.addEventListener("change", () => { state.task = sel.value; render(); });
+}
+
+document.getElementById("modelSeg").addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  state.model = b.dataset.model;
+  for (const btn of e.currentTarget.querySelectorAll("button"))
+    btn.setAttribute("aria-pressed", String(btn === b));
+  render();
+});
+
+const M = { top: 34, right: 150, bottom: 40, left: 56 };
+const W = 760, H = 400;
+const plotW = W - M.left - M.right, plotH = H - M.top - M.bottom;
+const xPos = i => M.left + plotW * (0.08 + 0.84 * i / (SIZES.length - 1));
+
+function niceMax(v) {
+  if (v <= 0.25) return 0.25;
+  if (v <= 0.5) return 0.5;
+  if (v <= 1) return 1;
+  if (v <= 1.5) return 1.5;
+  if (v <= 2) return 2;
+  return Math.ceil(v);
+}
+
+let current = []; // per size: {size, x, series:[{key,label,color,mean,trials}]}
+
+function render() {
+  const singleTask = state.task !== "__all__";
+  current = SIZES.map((size, i) => ({
+    size, x: xPos(i),
+    series: SERIES.map(s => {
+      const tr = trials(state.model, s.key, state.task, size);
+      return { ...s, color: cssColor(s.cssVar), mean: mean(tr), trials: tr };
+    }),
+  }));
+
+  let maxV = 0;
+  for (const col of current)
+    for (const s of col.series) {
+      if (s.mean != null) maxV = Math.max(maxV, s.mean);
+      if (singleTask) for (const t of s.trials) maxV = Math.max(maxV, t.cost);
+    }
+  const yMax = niceMax(maxV || 1);
+  const y = v => M.top + plotH * (1 - v / yMax);
+
+  const el = [];
+  const ticks = 5;
+  for (let k = 0; k <= ticks; k++) {
+    const v = yMax * k / ticks, yy = y(v);
+    el.push(`<line x1="${M.left}" x2="${W - M.right}" y1="${yy}" y2="${yy}" stroke="var(--grid)" stroke-width="1"/>`);
+    el.push(`<text x="${M.left - 8}" y="${yy + 3}" text-anchor="end" font-size="11">$${v.toFixed(2)}</text>`);
+  }
+  el.push(`<line x1="${M.left}" x2="${W - M.right}" y1="${y(0)}" y2="${y(0)}" stroke="var(--axis)" stroke-width="1"/>`);
+  for (const col of current)
+    el.push(`<text x="${col.x}" y="${H - 14}" text-anchor="middle" font-size="11">${Number(col.size).toLocaleString("en-US")} lines</text>`);
+  el.push(`<text x="${M.left - 42}" y="${M.top - 16}" font-size="11">USD / trial</text>`);
+
+  // crosshair (behind marks)
+  el.push(`<line id="xhair" y1="${M.top}" y2="${y(0)}" stroke="var(--axis)" stroke-width="1" stroke-dasharray="3 3" visibility="hidden"/>`);
+
+  const endLabels = [];
+  for (const [si, s] of SERIES.entries()) {
+    const pts = current.map(c => ({ x: c.x, v: c.series[si].mean })).filter(p => p.v != null);
+    if (!pts.length) continue;
+    const color = cssColor(s.cssVar);
+    el.push(`<path d="${pts.map((p, j) => `${j ? "L" : "M"}${p.x},${y(p.v)}`).join("")}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round"/>`);
+    if (singleTask)
+      for (const col of current)
+        for (const t of col.series[si].trials)
+          el.push(`<circle cx="${col.x}" cy="${y(t.cost)}" r="2.5" fill="${color}" opacity="0.35"/>`);
+    for (const p of pts)
+      el.push(`<circle cx="${p.x}" cy="${y(p.v)}" r="4" fill="${color}" stroke="var(--surface-1)" stroke-width="2"/>`);
+    const last = pts[pts.length - 1];
+    endLabels.push({ x: last.x, yLine: y(last.v), yText: y(last.v), color, text: `${s.key} $${last.v.toFixed(2)}` });
+  }
+  // push overlapping end labels apart (min 14px vertical gap)
+  endLabels.sort((a, b) => a.yText - b.yText);
+  for (let k = 1; k < endLabels.length; k++)
+    if (endLabels[k].yText - endLabels[k - 1].yText < 14)
+      endLabels[k].yText = endLabels[k - 1].yText + 14;
+  for (let k = endLabels.length - 1; k >= 0; k--) {
+    if (endLabels[k].yText > y(0) - 2) endLabels[k].yText = y(0) - 2;
+    if (k < endLabels.length - 1 && endLabels[k + 1].yText - endLabels[k].yText < 14)
+      endLabels[k].yText = endLabels[k + 1].yText - 14;
+  }
+  for (const L of endLabels) {
+    el.push(`<line x1="${L.x + 8}" x2="${L.x + 20}" y1="${L.yLine}" y2="${L.yText}" stroke="${L.color}" stroke-width="2" stroke-linecap="round"/>`);
+    el.push(`<text x="${L.x + 25}" y="${L.yText + 3.5}" font-size="11" fill="var(--text-primary)">${L.text}</text>`);
+  }
+  svg.innerHTML = el.join("");
+
+  document.getElementById("legend").innerHTML = SERIES.map(s =>
+    `<span class="item"><span class="swatch" style="background:${cssColor(s.cssVar)}"></span>${s.label}</span>`).join("");
+
+  const ti = document.getElementById("taskInfo");
+  const info = TASK_INFO[state.task];
+  if (singleTask && info) {
+    ti.hidden = false;
+    ti.innerHTML = `<div class="ti-name">${info.title}</div>` + info.html;
+  } else {
+    ti.hidden = true;
+  }
+
+  document.getElementById("note").textContent =
+    (singleTask ? "Faint dots are individual trials; large markers are cell means. " :
+      "Each point is the mean over all 7 tasks × 3 trials at that size. ") +
+    (state.model === "sonnet" && (state.task === "purge-blocks" || state.task === "__all__")
+      ? "Note: sonnet no-bash on purge-blocks @ 10,000 lines required a raised per-trial budget ($8; the default $3 cap aborted five straight attempts) — its two clean trials cost $4.61 and $4.66."
+      : "");
+
+  renderTable();
+}
+
+function renderTable() {
+  const rows = SERIES.map(s => {
+    const cells = current.map(col => {
+      const cs = col.series.find(x => x.key === s.key);
+      if (cs.mean == null) return "<td>—</td>";
+      const tr = cs.trials.map(t => `$${t.cost.toFixed(2)}${t.exact ? "" : "*"}`).join(", ");
+      return `<td>$${cs.mean.toFixed(2)} <span style="color:var(--text-muted)">(${tr})</span></td>`;
+    }).join("");
+    return `<tr><td>${s.label}</td>${cells}</tr>`;
+  }).join("");
+  document.getElementById("tableWrap").innerHTML =
+    `<table><thead><tr><th>condition</th>${SIZES.map(s => `<th>${Number(s).toLocaleString("en-US")} lines — mean (trials)</th>`).join("")}</tr></thead>` +
+    `<tbody>${rows}</tbody></table>` +
+    `<div class="note">* = trial completed but output was not byte-identical to target (see README for exact vs. semantic grading).</div>`;
+}
+
+svg.addEventListener("mousemove", e => {
+  const pt = svg.createSVGPoint();
+  pt.x = e.clientX; pt.y = e.clientY;
+  const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+  let best = null, bd = Infinity;
+  for (const col of current) {
+    const d = Math.abs(col.x - p.x);
+    if (d < bd) { bd = d; best = col; }
+  }
+  if (!best || p.x < M.left - 10 || p.x > W - M.right + 40) { hideTip(); return; }
+  const xh = svg.querySelector("#xhair");
+  if (xh) { xh.setAttribute("x1", best.x); xh.setAttribute("x2", best.x); xh.setAttribute("visibility", "visible"); }
+  tooltip.style.display = "block";
+  tooltip.innerHTML =
+    `<div class="tt-title">${Number(best.size).toLocaleString("en-US")} lines</div>` +
+    best.series.map(s => s.mean == null ? "" :
+      `<div class="row"><span class="dot" style="background:${s.color}"></span>` +
+      `<span class="name">${s.key}</span><span class="val">$${s.mean.toFixed(2)}</span></div>` +
+      `<div class="trials">${s.trials.length} trials: ${s.trials.map(t => t.cost.toFixed(2) + (t.exact ? "" : "*")).join(", ")}</div>`
+    ).join("");
+  const wr = wrap.getBoundingClientRect();
+  const scale = wr.width / W;
+  let lx = best.x * scale + 14;
+  if (lx + tooltip.offsetWidth > wr.width - 8) lx = best.x * scale - tooltip.offsetWidth - 14;
+  tooltip.style.left = lx + "px";
+  tooltip.style.top = Math.max(4, e.clientY - wr.top - 30) + "px";
+});
+svg.addEventListener("mouseleave", hideTip);
+function hideTip() {
+  tooltip.style.display = "none";
+  const xh = svg.querySelector("#xhair");
+  if (xh) xh.setAttribute("visibility", "hidden");
+}
+
+if (window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+buildTaskSelect();
+render();
+</script>
+</body>
+</html>
