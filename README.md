@@ -182,13 +182,13 @@ On a capable cheap model (Haiku), the Bash-armed baseline **silently corrupts fi
 | Haiku keyhole | 49/62 | **59/62** | 3 |
 | Haiku baseline | 53/62 | 57/62 | **5** |
 | Sonnet keyhole | 59/63 | **63/63** ¹ | 0 |
-| Sonnet baseline | 61/63 | 61/63 | ≤2 ² |
+| Sonnet baseline | 62/63 | 63/63 ² | 0 |
 
 ¹ Sonnet keyhole's two composite cells lost their outputs before the AST sweep, so both cells were fully re-run with outputs kept, and the re-runs replace the originals wholesale — kept regardless of outcome (the exact score dropped from 61 to 59 in the trade). All four non-exact re-run trials are AST-equal formatting (argument wrapping, blank lines), which is what makes the 63/63 verified rather than argued.
 
-² Sonnet baseline's two misses could not be AST-checked (their outputs were pruned before the sweep) — counted as non-passing in the semantic column, but not confirmed as real errors.
+² Sonnet baseline's two cells with lost outputs (purge-blocks @ 500, quote-trap @ 10 000) were fully re-run under the same whole-cell policy: exact rose to 62/63 and the one remaining miss is AST-equal formatting — no confirmed silent errors at the Sonnet tier, in either condition.
 
-Under exact-match grading keyhole and baseline look close; under semantic grading they diverge — **keyhole's misses are cosmetic, the baseline's are wrong code**. That asymmetry is the product bet: echo discipline turns errors visible before they land.
+Under exact-match grading Haiku's keyhole and baseline look close; under semantic grading they diverge — **keyhole's misses are cosmetic, the baseline's are wrong code**. On Sonnet both conditions are semantically clean; there the difference is money, not correctness (findings 2 and 3). The cheap-model asymmetry is the product bet: echo discipline turns errors visible before they land.
 
 ### 2. Keyhole cost is flat in file size
 
@@ -200,7 +200,7 @@ xychart-beta
     x-axis ["500 lines", "2000 lines", "10000 lines"]
     y-axis "USD" 0 --> 1.4
     line [0.34, 0.31, 0.35]
-    line [0.21, 0.28, 0.39]
+    line [0.21, 0.28, 0.38]
     line [0.21, 0.56, 1.21]
 ```
 
@@ -224,7 +224,7 @@ Keyhole is flat (~$0.33 Sonnet, ~$0.11 Haiku, regardless of size) because it nev
 
 The **no-bash** condition is the measured version of the permission-management argument — what actually happens when a cautious user denies shell execution:
 
-- **Cheap model (Haiku): correctness collapses on structural tasks.** 55/63 overall, but all 8 misses concentrate on the file-wide/structural tasks (quote-trap, composite, purge-blocks), most of them silent. The simple trap tasks are fine — grinding per-site `Edit` calls avoids the sed traps — but purge-blocks@10 000 went 0-for-clean repeatedly.
+- **Cheap model (Haiku): correctness collapses on structural tasks.** 56/63 exact, and all 7 misses concentrate on the file-wide/structural tasks (quote-trap, composite, purge-blocks) — 4 of them semantically wrong output, i.e. silent corruption, the rest formatting-only. The simple trap tasks are fine — grinding per-site `Edit` calls avoids the sed traps — but purge-blocks@10 000 stayed 0-for-clean, with 2 of 3 trials silently wrong.
 - **Frontier model (Sonnet): correctness holds, money doesn't.** 62/62 exact — but cost climbs $0.21 → $0.56 → $1.21 with size, and on purge-blocks@10 000 it initially **blew through a $3-per-trial budget five times in a row** (per-site editing, ~130 tool calls). With the budget raised to $8 it finishes cleanly — at **$4.6 per trial, ~14× keyhole's $0.33** on the same cell.
 - **Keyhole is unaffected by the lockdown** — it never used those tools to begin with. Same flat cost, same correctness.
 
@@ -242,10 +242,10 @@ Exact matches / clean trials. Keyhole's composite and move-multi misses are almo
 | rename-trap | 9/9 | 8/9 | 9/9 |
 | bump-trap | 9/9 | 9/9 | 9/9 |
 | delete-trap | 9/9 | 8/9 | 9/9 |
-| quote-trap | 9/9 | 7/9 | 7/9 |
-| composite | 2/9 ³ | 7/9 | 7/9 |
+| quote-trap | 9/9 | 7/9 | 8/9 |
+| composite | 2/9 ³ | 7/9 | 6/9 |
 | move-multi | 3/9 ³ | 8/9 | 9/9 |
-| purge-blocks | 8/8 | 6/8 | 5/9 |
+| purge-blocks | 8/8 | 6/8 | 6/9 |
 
 ³ composite: 5 of 7 misses AST-equal (7/9 semantic); move-multi: 5 of 6 misses AST-equal (8/9 semantic).
 
@@ -256,7 +256,7 @@ Exact matches / clean trials. Keyhole's composite and move-multi misses are almo
 | rename-trap | 9/9 | 9/9 | 9/9 |
 | bump-trap | 9/9 | 9/9 | 9/9 |
 | delete-trap | 9/9 | 9/9 | 9/9 |
-| quote-trap | 9/9 | 8/9 | 9/9 |
+| quote-trap | 9/9 | 9/9 | 9/9 |
 | composite | 5/9 ⁴ | 9/9 | 9/9 |
 | move-multi | 9/9 | 9/9 | 9/9 |
 | purge-blocks | 9/9 | 8/9 | 8/8 ⁵ |
@@ -270,8 +270,8 @@ Exact matches / clean trials. Keyhole's composite and move-multi misses are almo
 
 - Driver: headless Claude Code (`claude -p --output-format stream-json`); cost/token/tool-call numbers come from the CLI's own usage accounting, per trial.
 - Trials with harness aborts (session/usage limits, budget caps) are flagged and excluded from correctness scores; aborted cells were re-run.
-- "Semantic" = Python `ast` equality between output and target. For a handful of older trials the output files were not retained, so their semantic status is unknown and they count as misses; the semantic column is therefore a lower bound.
-- Where a cell's outputs were lost *and* the cell was later fully re-run with outputs kept, the re-run replaces the original cell wholesale — all 3 trials, kept regardless of outcome, never a per-trial retry. Applied to Sonnet keyhole composite @ 2 000/10 000 (which *lowered* the exact score).
+- "Semantic" = Python `ast` equality between output and target. Every non-exact trial in the grid has been AST-classified against its retained output — the semantic column is a measurement, not a lower bound.
+- Some early cells lost their outputs before the AST sweep (workdirs defaulted to system tmp). Every such cell was fully re-run with outputs kept, and the re-run replaces the original cell wholesale — all 3 trials, kept regardless of outcome, never a per-trial retry. This cut both ways: Sonnet keyhole's exact score *fell* 61 → 59, Haiku no-bash's confirmed silent errors *rose* 1 → 4, Sonnet baseline *improved* to 62/63.
 - n=3 per cell — directional, not publication statistics. Tasks are single-file generated Python; multi-file editing is future work.
 - The Haiku keyhole/baseline round ran on a slightly older Claude Code CLI than the rest of the grid; cross-round comparisons are indicative.
 - Model IDs: `claude-haiku-4-5`, `claude-sonnet-5` (see "Why no higher tier?" above for the deliberate Opus omission).

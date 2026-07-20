@@ -107,6 +107,13 @@ the design. Recording why, because the framing is the answer:
   feedback channel costs what a teletype cost." The benchmark's baseline
   condition is literally the alternative hypothesis (let the model take
   big sed/regex shots); the silent-error column is the measured answer.
+  **(Reversed 2026-07-19, user decision:** the README *embraces* "vim
+  for AIs" — it matches the logo and the project name, and the same
+  argument is kept but inverted: a vim built honestly *for AIs* must
+  work like ed, because an agent perceives like a teletype user, not a
+  screen user. Same ed-discipline substance, friendlier front door;
+  tagline is "Vim for AI agents: keyhole editing with vim's vocabulary
+  and ed's discipline".)
 
 ### Design principles
 
@@ -1300,6 +1307,10 @@ unlike haiku no-bash (34/42). The lockdown cost shows up elsewhere:
   finish under a raised cap is untested — re-run with `--budget 8`
   if a clean number is wanted. Same cell for comparison: keyhole
   $0.33–0.46 clean 3/3, full baseline ~$0.36 clean 3/3.
+  (Update 2026-07-19: tested — with `--budget 8` the cell completes
+  2/2 exact at $4.61/$4.66 per trial, ~14× keyhole. A budget cap
+  converts the cost blowup into loud failure; raising it converts it
+  back into money.)
 - The two remaining aborts (quote-trap@10000, move-multi@500) are
   ordinary session-limit noise, not task-shaped.
 
@@ -1327,6 +1338,84 @@ ahead of baseline's 61/63, not behind); settling it means re-running
 composite sonnet keyhole @2000/@10000 (~4 trials) with `--workdirs`
 since the original outputs were discarded. That mini-re-run is the one
 benchmark expenditure still on the table; decide before the writeup.
+**(Resolved — see "Grader decision and final verified results" below.)**
+
+### Grader decision and final verified results (recorded 2026-07-20)
+
+**Grader decision (2026-07-19): report both columns.** *Exact* =
+byte-identical to target (primary, mechanical). *Semantic* = Python
+`ast` equality (same program, formatting-only divergence tolerated).
+Every non-exact trial is AST-classified against its retained output;
+the explorer's embedded DATA carries the verdict per trial as
+`sem: true` (formatting-only) / `sem: false` (silent failure).
+
+**Whole-cell swap policy (user decision 2026-07-19/20).** Some early
+cells lost their outputs before the AST sweep because workdirs
+defaulted to system tmp (`--workdirs` not passed — always pass
+`--workdirs benchmark/results/workdirs` from now on). A cell with lost
+outputs may only be replaced by a **full 3-trial re-run kept regardless
+of outcome** — never a per-trial retry, which would be
+retry-until-pass bias. Applied twice:
+
+- 2026-07-19: sonnet keyhole composite @2000/@10000 replaced by the
+  `regrade-composite.jsonl` re-runs (exact *fell* 61→59/63; semantic
+  63/63 now verified, not argued).
+- 2026-07-20: the remaining 8 cells with unverified misses re-run by
+  the user ($12.41, `rerun-unverified.jsonl`, 24 trials + 1 abort
+  properly excluded/re-run) and swapped in. **Zero unverified trials
+  remain in the grid; the semantic column is a measurement, not a
+  lower bound.**
+
+**Final verified numbers** (canonical copies: README findings tables +
+`docs/cost-explorer.html` DATA — regenerate views from those, not from
+this prose):
+
+| model × condition | exact | semantic | confirmed silent fails |
+|---|---|---|---|
+| haiku keyhole | 49/62 | 59/62 | 3 |
+| haiku baseline | 53/62 | 57/62 | 5 |
+| haiku no-bash | 56/63 | 59/63 | 4 |
+| sonnet keyhole | 59/63 | 63/63 | 0 |
+| sonnet baseline | 62/63 | 63/63 | 0 |
+| sonnet no-bash | 62/62 | 62/62 | 0 |
+
+Reading, in order of defensibility:
+
+1. **Every confirmed silent failure in the grid is haiku's (12).**
+   Sonnet is semantically clean in all three conditions; at the
+   frontier the difference is money, not correctness.
+2. **Where they fail differs (the strongest pro-keyhole claim):**
+   haiku keyhole's 3 silent fails all sit on its genuinely hardest
+   tasks (composite ×2, move-multi); haiku baseline's 5 include
+   rename-trap and delete-trap — simple tasks where the tempting sed
+   one-shot exists. Baseline fails where the *trap* is; keyhole fails
+   where the *work* is hard. Keyhole removes the avoidable failure
+   mode.
+3. **Silent-fail counts favor keyhole only directionally** (3 vs 5 vs
+   4 on ~62 trials/condition) — not statistically significant at
+   n=3/cell; don't oversell it beyond "slight favour".
+4. **Cost story unchanged:** keyhole flat (~$0.11 haiku / ~$0.33
+   sonnet at every size); read-the-file conditions grow with size;
+   sonnet no-bash purge-blocks@10000 needs $4.6/trial (~14× keyhole)
+   once the $3 cap is lifted.
+
+**Data provenance:** `results.jsonl` (main grid) +
+`probe-haiku-v0.10.jsonl` (haiku keyhole/baseline round) +
+`regrade-composite.jsonl` (swap 1) + `rerun-unverified.jsonl`
+(swap 2); filter `aborted: true` rows; dedup/selection is baked into
+the explorer DATA. `results.jsonl` also holds 2 informal **opus**
+keyhole trials (purge-blocks@500, both exact, $0.35/$0.58) — carried
+in explorer DATA but inert (no UI button); README deliberately claims
+no higher-tier data.
+
+**Deliverables shipped (2026-07-19/20):** README (idea, vim-for-AIs/
+ed-discipline framing, 7 task-trap descriptions, findings 1–3 with
+both grading columns, per-task tables, methodology incl. swap policy),
+compressed logo `djinnvim.png`, and `docs/cost-explorer.html` — a
+self-contained interactive cost chart (per-trial dots, red ✗ = silent
+failure, per-condition fail badges, data table; task descriptions
+mirrored from the README **by hand — keep them in sync on edit**).
+Serve via GitHub Pages (`Settings → Pages → main /docs`).
 
 ### Post-sweep queue (recorded 2026-07-18)
 

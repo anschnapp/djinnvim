@@ -168,8 +168,9 @@
 //   DATA[model][condition][task][size] = [{cost, exact, calls}, ...]  (one entry per trial)
 // Non-exact trials additionally carry "sem", the AST comparison of the trial's
 // output against the target: true = AST-equal (formatting-only divergence),
-// false = semantically wrong output (a silent failure), null = the trial's
-// workdir was pruned before the AST sweep, so it can't be classified.
+// false = semantically wrong output (a silent failure). null would mean
+// unverifiable (output lost) — the current snapshot has none: every cell that
+// lost its outputs was fully re-run and swapped in wholesale (see README).
 const DATA = {
   "haiku": {
     "baseline": {
@@ -254,8 +255,8 @@ const DATA = {
       },
       "composite": {
         "500": [{"cost": 0.126, "exact": true, "calls": 22}, {"cost": 0.096, "exact": true, "calls": 17}, {"cost": 0.104, "exact": true, "calls": 17}],
-        "2000": [{"cost": 0.357, "exact": false, "sem": null, "calls": 49}, {"cost": 0.404, "exact": true, "calls": 54}, {"cost": 0.425, "exact": true, "calls": 54}],
-        "10000": [{"cost": 1.048, "exact": false, "sem": null, "calls": 119}, {"cost": 1.203, "exact": true, "calls": 231}, {"cost": 1.482, "exact": true, "calls": 107}]
+        "2000": [{"cost": 0.348, "exact": false, "sem": false, "calls": 43}, {"cost": 0.413, "exact": true, "calls": 55}, {"cost": 0.402, "exact": true, "calls": 54}],
+        "10000": [{"cost": 1.088, "exact": false, "sem": false, "calls": 214}, {"cost": 1.538, "exact": true, "calls": 156}, {"cost": 1.01, "exact": false, "sem": true, "calls": 108}]
       },
       "delete-trap": {
         "500": [{"cost": 0.045, "exact": true, "calls": 6}, {"cost": 0.044, "exact": true, "calls": 6}, {"cost": 0.049, "exact": true, "calls": 6}],
@@ -268,13 +269,13 @@ const DATA = {
         "10000": [{"cost": 0.197, "exact": true, "calls": 19}, {"cost": 0.173, "exact": true, "calls": 19}, {"cost": 0.26, "exact": true, "calls": 22}]
       },
       "purge-blocks": {
-        "500": [{"cost": 0.098, "exact": true, "calls": 9}, {"cost": 0.066, "exact": false, "sem": null, "calls": 9}, {"cost": 0.076, "exact": true, "calls": 10}],
+        "500": [{"cost": 0.058, "exact": true, "calls": 7}, {"cost": 0.073, "exact": true, "calls": 9}, {"cost": 0.114, "exact": true, "calls": 8}],
         "2000": [{"cost": 0.23, "exact": true, "calls": 30}, {"cost": 0.239, "exact": true, "calls": 33}, {"cost": 0.246, "exact": true, "calls": 31}],
-        "10000": [{"cost": 0.894, "exact": false, "sem": null, "calls": 38}, {"cost": 0.877, "exact": false, "sem": null, "calls": 68}, {"cost": 1.049, "exact": false, "sem": false, "calls": 50}]
+        "10000": [{"cost": 0.369, "exact": false, "sem": true, "calls": 19}, {"cost": 1.191, "exact": false, "sem": false, "calls": 79}, {"cost": 1.396, "exact": false, "sem": false, "calls": 98}]
       },
       "quote-trap": {
-        "500": [{"cost": 0.094, "exact": true, "calls": 18}, {"cost": 0.075, "exact": false, "sem": null, "calls": 25}, {"cost": 0.134, "exact": true, "calls": 24}],
-        "2000": [{"cost": 0.194, "exact": true, "calls": 26}, {"cost": 0.067, "exact": false, "sem": null, "calls": 2}, {"cost": 0.215, "exact": true, "calls": 27}],
+        "500": [{"cost": 0.137, "exact": true, "calls": 26}, {"cost": 0.14, "exact": false, "sem": true, "calls": 27}, {"cost": 0.091, "exact": true, "calls": 3}],
+        "2000": [{"cost": 0.209, "exact": true, "calls": 28}, {"cost": 0.236, "exact": true, "calls": 31}, {"cost": 0.204, "exact": true, "calls": 26}],
         "10000": [{"cost": 0.299, "exact": true, "calls": 33}, {"cost": 0.353, "exact": true, "calls": 46}, {"cost": 0.525, "exact": true, "calls": 38}]
       },
       "rename-trap": {
@@ -314,14 +315,14 @@ const DATA = {
         "10000": [{"cost": 0.565, "exact": true, "calls": 15}, {"cost": 0.645, "exact": true, "calls": 17}, {"cost": 0.568, "exact": true, "calls": 15}]
       },
       "purge-blocks": {
-        "500": [{"cost": 0.23, "exact": true, "calls": 9}, {"cost": 0.249, "exact": true, "calls": 10}, {"cost": 0.153, "exact": false, "sem": null, "calls": 4}],
+        "500": [{"cost": 0.242, "exact": true, "calls": 10}, {"cost": 0.278, "exact": false, "sem": true, "calls": 10}, {"cost": 0.193, "exact": true, "calls": 7}],
         "2000": [{"cost": 0.517, "exact": true, "calls": 10}, {"cost": 0.25, "exact": true, "calls": 4}, {"cost": 0.3, "exact": true, "calls": 6}],
         "10000": [{"cost": 0.358, "exact": true, "calls": 6}, {"cost": 0.342, "exact": true, "calls": 5}, {"cost": 0.362, "exact": true, "calls": 6}]
       },
       "quote-trap": {
         "500": [{"cost": 0.243, "exact": true, "calls": 9}, {"cost": 0.219, "exact": true, "calls": 8}, {"cost": 0.214, "exact": true, "calls": 7}],
         "2000": [{"cost": 0.386, "exact": true, "calls": 10}, {"cost": 0.375, "exact": true, "calls": 9}, {"cost": 0.406, "exact": true, "calls": 11}],
-        "10000": [{"cost": 0.455, "exact": false, "sem": null, "calls": 9}, {"cost": 0.371, "exact": true, "calls": 7}, {"cost": 0.944, "exact": true, "calls": 16}]
+        "10000": [{"cost": 0.608, "exact": true, "calls": 13}, {"cost": 0.574, "exact": true, "calls": 12}, {"cost": 0.482, "exact": true, "calls": 9}]
       },
       "rename-trap": {
         "500": [{"cost": 0.125, "exact": true, "calls": 4}, {"cost": 0.115, "exact": true, "calls": 5}, {"cost": 0.209, "exact": true, "calls": 9}],
@@ -694,7 +695,7 @@ function renderTable() {
   document.getElementById("tableWrap").innerHTML =
     `<table><thead><tr><th>condition</th>${SIZES.map(s => `<th>${Number(s).toLocaleString("en-US")} lines — mean (trials)</th>`).join("")}</tr></thead>` +
     `<tbody>${rows}</tbody></table>` +
-    `<div class="note">* = not byte-identical but AST-equal (formatting-only divergence) &nbsp;·&nbsp; ✗ = semantically wrong output (silent failure) &nbsp;·&nbsp; ? = not byte-identical, workdir pruned before the AST check (unverified). See README for exact vs. semantic grading.</div>`;
+    `<div class="note">* = not byte-identical but AST-equal (formatting-only divergence) &nbsp;·&nbsp; ✗ = semantically wrong output (silent failure). See README for exact vs. semantic grading.</div>`;
 }
 
 // --- hover: crosshair + tooltip --------------------------------------------
