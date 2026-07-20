@@ -1419,14 +1419,20 @@ Serve via GitHub Pages (`Settings → Pages → main /docs`).
 
 ### Post-sweep queue (recorded 2026-07-18)
 
-1. **Bug, confirmed live, next session:** `motion`'s search status
-   reports `match 1 of 1` even when multiple matches exist (user
-   repro'd manually; `matches` lists several hits, `/pattern` claims
-   1 of 1). Echo-discipline critical — the `match i of n` count is
-   what principle #4 leans on for ambiguity awareness, and dogfoods
-   #1–#3 credited it with catching decoys. A debugging breadcrumb
-   (`ohits` + todo comment) is parked in `motion.py`; write a failing
-   repro first, then fix.
+1. ~~**Bug: `motion` reports `match 1 of 1` despite multiple
+   matches.**~~ **Closed 2026-07-20 as a false alarm.** Diagnosis:
+   `motion`'s count and `matches` run the identical per-line
+   `re.finditer` over the same buffer (only asymmetry: `motion`
+   strips trailing whitespace from the command, which can only
+   broaden a pattern); a scan of all 672 logged sessions (benchmark
+   transcripts + interactive dogfoods) found zero motion-vs-matches
+   count disagreements; and the live repro (`/Rejected` in edit.py →
+   `match 1 of 1`) was correct — the pattern occurs exactly once,
+   and the "several listed hits" were the viewport's *context lines*
+   (2 above + cursor + 2 below) misread as a match listing. UX note
+   kept from the episode: a human skimming a motion echo can mistake
+   the numbered viewport for a grep-style hit list; no model did in
+   any session, so the agent-facing format stays unchanged.
 2. **Discussion point, not yet decided: root confinement hardening.**
    Goal: djinnvim must operate on the correct project workdir and be
    unable to read/edit anything outside it — same containment posture
