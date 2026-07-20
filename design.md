@@ -1433,22 +1433,81 @@ Serve via GitHub Pages (`Settings → Pages → main /docs`).
    kept from the episode: a human skimming a motion echo can mistake
    the numbered viewport for a grep-style hit list; no model did in
    any session, so the agent-facing format stays unchanged.
-2. **Discussion point, not yet decided: root confinement hardening.**
-   Goal: djinnvim must operate on the correct project workdir and be
-   unable to read/edit anything outside it — same containment posture
-   as Claude Code's native Edit tool. Current state: `Session`
-   resolves every path and rejects those not under the root
-   (`session.py`); root = `DJINNVIM_ROOT` env var, **falling back to
-   the server process's cwd**. Questions to settle in conversation:
-   is the cwd fallback the right default for real MCP-client use
-   (Claude Code spawns stdio servers with the project dir as cwd —
-   but other clients may not, and a wrong cwd silently widens the
-   sandbox to wherever the server happened to start); should the
-   fallback be removed (require explicit `DJINNVIM_ROOT`, fail loudly
-   without it) or announced (root stated in every `open` echo);
-   symlink/TOCTOU review (`.resolve()` before the `is_relative_to`
-   check handles symlink escapes — verify with tests, including a
-   symlink *inside* the root pointing outside).
+2. ~~**Discussion point, not yet decided: root confinement
+   hardening.**~~ **Settled 2026-07-20 — see "Root confinement:
+   multi-root sandbox" below.** (Original questions: cwd fallback
+   right for non-Claude-Code clients? remove vs announce?
+   symlink/TOCTOU test review.)
+
+### Root confinement: multi-root sandbox (decided 2026-07-20)
+
+Settles post-sweep queue item 2, discussed in conversation. Goal
+unchanged: same containment posture as Claude Code's native Edit tool
+— and it turns out that posture is literally obtainable: the MCP
+`roots/list` request returns exactly the set native Edit operates
+under (session launch dir + every `--add-dir` / `/add-dir` /
+`additionalDirectories` grant), with `notifications/roots/list_changed`
+on changes (Claude Code ≥ 2.1.203; docs explicitly recommend servers
+that limit filesystem access implement it). Verified empirically the
+same day: Claude Code spawns stdio servers with cwd = project dir and
+sets `CLAUDE_PROJECT_DIR` in the server env.
+
+**Trust model.** Every root exists because a *user* granted it; the
+client is trusted by construction (it spawns the server process and
+controls env/cwd/conversation already), and the *model* cannot expand
+the set — root additions go through user approval. So honoring all
+client roots is not a widening of trust. The adversary this sandbox
+confines is the agent (model-generated paths, prompt injection), NOT
+a hostile local user: TOCTOU races (dir component swapped for a
+symlink between validation and write) and hardlinks-into-the-root are
+consciously out of scope — native Edit has identical exposure, and
+closing them needs `openat2(RESOLVE_BENEATH)`-class syscalls for an
+attacker who already owns the project dir. One README sentence states
+this ("confines the agent, not a hostile local user").
+
+Decisions:
+
+- **Multiple roots, all peers — NO primary/secondary distinction**
+  (user call: "primary" is arbitrary and unknowable, and the
+  `CLAUDE_PROJECT_DIR`-matching heuristic it would need is exactly
+  the complexity to avoid). Consequence for relative paths: allowed
+  only when exactly one root is configured (resolved against it —
+  the overwhelmingly common case); with multiple roots, a relative
+  `open` fails loudly, names the roots, and says to use an absolute
+  path — that error doubles as the sandbox announcement.
+- **`DJINNVIM_ROOT` → `DJINNVIM_ROOTS`**, an `os.pathsep`-separated
+  list (`:` POSIX / `;` Windows — the PATH convention, so `C:\` paths
+  survive). First-class and exclusive: when set, client roots are
+  ignored entirely — the cautious user's pinned boundary that no
+  client chatter can widen (the permission-management story depends
+  on this). `DJINNVIM_ROOT` (singular) stays accepted as a one-entry
+  alias — benchmark runner + existing docs set it.
+- **Resolution chain:** `DJINNVIM_ROOTS` (explicit, exclusive) →
+  `DJINNVIM_ROOT` (alias) → MCP `roots/list` (requested lazily on
+  first tool call — it can't run before initialize; `list_changed`
+  honored) → `CLAUDE_PROJECT_DIR` → server cwd.
+- **Sanity refusal on `/` and `$HOME`:** refused as roots with a loud
+  error ("set DJINNVIM_ROOTS explicitly if you mean this") from every
+  NON-explicit source — client `roots/list`, `CLAUDE_PROJECT_DIR`,
+  and cwd (a client that spawns the server in `$HOME` is precisely
+  the sloppy-client case this guards). Via `DJINNVIM_ROOTS` they are
+  accepted: explicit = deliberate.
+- **Validation stays at the single choke point** (`Session.open`,
+  `.resolve()` BEFORE the containment check — symlink escapes,
+  including a symlink inside a root pointing outside, resolve to
+  their true target and are rejected), generalized to
+  any-of-roots. One defense-in-depth addition: re-validate at
+  `write`, so a buffer opened under a since-revoked root
+  (`list_changed` shrink) fails loudly instead of writing.
+- **Tests to write with the implementation:** `..` traversal,
+  absolute path outside, symlink-inside-pointing-out, multi-root
+  accept/reject, relative-path-with-multiple-roots error, the
+  `/`/`$HOME` refusals per source, write-time revalidation.
+- One asymmetry recorded honestly (README containment section, not
+  swept under "same as Edit"): native tools can re-prompt per edit
+  depending on mode; djinnvim's `write`, once allowed as a tool, is
+  allowed across the whole sandbox — same shape as native
+  `acceptEdits`, a comparable posture rather than a regression.
 
 ### Original plan
 
