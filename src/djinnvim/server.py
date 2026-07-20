@@ -6,31 +6,83 @@ stated explicitly. structured_output=False keeps results as plain multi-line
 text — the structured {"result": ...} wrapping reached the model JSON-escaped,
 destroying viewport alignment (found in benchmark transcripts, 2026-07-13)."""
 
-import os
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
-from mcp.server.fastmcp import FastMCP
+from mcp import types
+from mcp.server.fastmcp import Context, FastMCP
 
+from . import roots as roots_mod
 from .session import Session
 
 mcp = FastMCP("djinnvim")
 
-session = Session(Path(os.environ.get("DJINNVIM_ROOT", os.getcwd())))
+# Explicit env roots are exclusive: when set, client roots/list is never
+# consulted — the pinned boundary no client chatter can widen.
+_ENV_ROOTS = roots_mod.env_roots()
+session = Session(roots=_ENV_ROOTS)
+_roots_stale = False
+
+
+async def _on_roots_changed(_notification: types.RootsListChangedNotification) -> None:
+    global _roots_stale
+    _roots_stale = True
+
+
+mcp._mcp_server.notification_handlers[types.RootsListChangedNotification] = (
+    _on_roots_changed
+)
+
+
+async def _client_roots(ctx: Context) -> list[Path] | None:
+    """Roots granted by the MCP client, or None if it offers none."""
+    caps = types.ClientCapabilities(roots=types.RootsCapability())
+    if not ctx.session.check_client_capability(caps):
+        return None
+    result = await ctx.session.list_roots()
+    paths = [
+        roots_mod.check_sane(
+            Path(unquote(urlparse(str(root.uri)).path)), "client roots/list"
+        )
+        for root in result.roots
+        if str(root.uri).startswith("file:")
+    ]
+    return paths or None
+
+
+async def _ensure_roots(ctx: Context | None) -> str | None:
+    """Resolve sandbox roots lazily (roots/list can't run before initialize,
+    so it happens on the first tool call). Returns an error string or None."""
+    global _roots_stale
+    if _ENV_ROOTS is not None:
+        return None
+    if session.roots is not None and not _roots_stale:
+        return None
+    try:
+        roots = (await _client_roots(ctx)) if ctx is not None else None
+        if roots is None:
+            roots = roots_mod.fallback_roots()
+    except roots_mod.RootsError as e:
+        return f"error: {e}"
+    session.roots = roots
+    _roots_stale = False
+    return None
 
 
 @mcp.tool(structured_output=False)
-def open(path: str) -> str:
+async def open(path: str, ctx: Context | None = None) -> str:
     """Open a file as the active buffer (or switch to an already-open one).
     Returns metadata + a small viewport, never the full content. Navigate by
     pattern with `motion`, not by reading. Then: `matches` to see all sites
     of a pattern, `edit` for vim normal-mode edits (text objects, whole
     blocks/paragraphs, registers, undo), `substitute` for ex-style regex
     line edits."""
-    return session.open(path)
+    err = await _ensure_roots(ctx)
+    return err if err else session.open(path)
 
 
 @mcp.tool(structured_output=False)
-def motion(command: str) -> str:
+async def motion(command: str, ctx: Context | None = None) -> str:
     """Move the cursor in the active buffer. One motion per call: /pattern
     (regex forward), ?pattern (backward), n/N (next/previous match — n is
     ALWAYS forward and N ALWAYS backward, unlike vim), :N (line N), gg/G
@@ -41,11 +93,12 @@ def motion(command: str) -> str:
 
     Examples: motion("/def parse")   motion(":80")   motion("n")
     """
-    return session.motion(command)
+    err = await _ensure_roots(ctx)
+    return err if err else session.motion(command)
 
 
 @mcp.tool(structured_output=False)
-def edit(command: str) -> str:
+async def edit(command: str, ctx: Context | None = None) -> str:
     """Edit at the cursor, or anchored: `at /pattern/ <cmd>` (ordinal:
     `at 2nd /pattern/ <cmd>`). The anchor lands at the START of the match —
     anchor on the exact text to change: `at /15\\)/ ciw 60` changes the 15
@@ -86,11 +139,12 @@ def edit(command: str) -> str:
       edit("at /def helper/ \\"fn dap")   then   edit("\\"fn p")
       edit("u")
     """
-    return session.edit(command)
+    err = await _ensure_roots(ctx)
+    return err if err else session.edit(command)
 
 
 @mcp.tool(structured_output=False)
-def substitute(command: str) -> str:
+async def substitute(command: str, ctx: Context | None = None) -> str:
     """Ex commands for file-wide or ranged changes (call matches first to
     see all sites). Forms: `:%s/old/new/g` (file), `:s/old/new/` (cursor
     line), `:10,40s/foo/bar/`, `:/start/,/end/s/x/y/g` (pattern range),
@@ -119,25 +173,28 @@ def substitute(command: str) -> str:
       substitute(":g/DEBUG/d")
       substitute(":/def helper/,/^def /-1d fn")
     """
-    return session.substitute(command)
+    err = await _ensure_roots(ctx)
+    return err if err else session.substitute(command)
 
 
 @mcp.tool(structured_output=False)
-def matches(pattern: str, context: int = 0) -> str:
+async def matches(pattern: str, context: int = 0, ctx: Context | None = None) -> str:
     """Grep-style listing of all regex matches in the active buffer — one
     line per matching line, capped at 50. Call before rename-like refactors
     to see every affected site. `context` (0 or 1) adds surrounding lines.
 
     Example: matches("parse_config")
     """
-    return session.matches(pattern, context)
+    err = await _ensure_roots(ctx)
+    return err if err else session.matches(pattern, context)
 
 
 @mcp.tool(structured_output=False)
-def write() -> str:
+async def write(ctx: Context | None = None) -> str:
     """Save the active buffer to disk. Returns confirmation + how many lines
     changed since the last write. Buffers are in-memory until written."""
-    return session.write()
+    err = await _ensure_roots(ctx)
+    return err if err else session.write()
 
 
 def main() -> None:

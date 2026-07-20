@@ -160,7 +160,7 @@ def test_register_prefix_on_u_fails_loudly():
 def sess(tmp_path):
     f = tmp_path / "code.py"
     f.write_text("\n".join(LINES) + "\n")
-    s = Session(root=tmp_path)
+    s = Session(roots=[tmp_path])
     s.open("code.py")
     return s
 

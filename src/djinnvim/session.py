@@ -30,8 +30,12 @@ MATCHES_CAP = 50
 
 
 class Session:
-    def __init__(self, root: Path | None = None):
-        self.root = (root or Path.cwd()).resolve()
+    def __init__(self, roots: list[Path] | None = None):
+        # None = not yet resolved (the server fills this in lazily from the
+        # client); may be reassigned when the client's root grants change.
+        self.roots: list[Path] | None = (
+            [Path(r).resolve() for r in roots] if roots is not None else None
+        )
         self.buffers: dict[Path, Buffer] = {}
         self.active: Buffer | None = None
         # Session-wide (not per-buffer), so cut in one file / paste in
@@ -49,11 +53,30 @@ class Session:
                 "(unwritten buffer changes will be lost)"
             )
 
+    def _roots_display(self) -> str:
+        return ", ".join(str(r) for r in (self.roots or []))
+
+    def _contained(self, p: Path) -> bool:
+        return any(p.is_relative_to(r) for r in (self.roots or []))
+
     def open(self, path: str) -> str:
+        if not self.roots:
+            return "error: no sandbox roots configured — set DJINNVIM_ROOTS"
         p = Path(path)
-        p = (p if p.is_absolute() else self.root / p).resolve()
-        if not p.is_relative_to(self.root):
-            return f"error: {p} is outside the allowed root {self.root}"
+        if not p.is_absolute():
+            if len(self.roots) > 1:
+                return (
+                    f"error: relative path {path!r} with multiple sandbox "
+                    f"roots ({self._roots_display()}) — use an absolute path"
+                )
+            p = self.roots[0] / p
+        p = p.resolve()  # BEFORE the containment check: symlinks resolve to
+        # their true target, so a link inside a root pointing out is rejected
+        if not self._contained(p):
+            return (
+                f"error: {p} is outside the sandbox root(s): "
+                f"{self._roots_display()}"
+            )
         if not p.is_file():
             return f"error: no such file: {p}"
 
@@ -151,6 +174,13 @@ class Session:
             self._check_fresh(buf)
         except edit_mod.EditError as e:
             return f"error: {e}"
+        # Defense in depth: a buffer opened under a since-revoked root
+        # (client roots/list shrank) must fail loudly instead of writing.
+        if not self._contained(buf.path):
+            return (
+                f"error: {buf.path} is no longer inside the sandbox root(s) "
+                f"({self._roots_display()}) — access was revoked; not written"
+            )
 
         changed = sum(
             max(i2 - i1, j2 - j1)

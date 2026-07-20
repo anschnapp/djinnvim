@@ -347,7 +347,7 @@ def test_registers_survive_across_buffers(tmp_path):
     b = tmp_path / "b.py"
     a.write_text("keep = 1\nmove_me = 2\n")
     b.write_text("target = 3\n")
-    s = Session(root=tmp_path)
+    s = Session(roots=[tmp_path])
 
     s.open("a.py")
     out = s.substitute(":2,2d block")
@@ -364,7 +364,7 @@ def test_registers_survive_across_buffers(tmp_path):
 def test_normal_mode_move_within_file(tmp_path):
     f = tmp_path / "a.py"
     f.write_text("def a():\n    pass\n\ndef b():\n    pass\n")
-    s = Session(root=tmp_path)
+    s = Session(roots=[tmp_path])
     s.open("a.py")
     out = s.edit('at /def a/ "fn dap')
     assert 'cut 3 line(s) (1–3) into register "fn"' in out
@@ -377,7 +377,7 @@ def test_normal_mode_move_within_file(tmp_path):
 def test_session_error_string_for_unknown_register(tmp_path):
     f = tmp_path / "a.py"
     f.write_text("x = 1\n")
-    s = Session(root=tmp_path)
+    s = Session(roots=[tmp_path])
     s.open("a.py")
     out = s.edit('"nope p')
     assert out.startswith("error: ")

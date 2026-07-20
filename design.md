@@ -563,20 +563,32 @@ src/djinnvim/
                     signposts `at each`
   session.py     ✅ interface-neutral Session facade (2026-07-10): buffer
                     registry + active buffer + the six operations as
-                    string-in/string-out methods; root path sandboxing;
-                    staleness check before edit/substitute/write
+                    string-in/string-out methods; staleness check before
+                    edit/substitute/write; v0.11: multi-root sandboxing
+                    (any-of-roots containment at open, resolve-before-
+                    check, single-root relative resolution, write-time
+                    revalidation)
+  roots.py       ✅ v0.11: sandbox root resolution — DJINNVIM_ROOTS
+                    (pathsep list, exclusive) / DJINNVIM_ROOT alias,
+                    per-source `/`+$HOME sanity refusal,
+                    CLAUDE_PROJECT_DIR→cwd fallback
   server.py      ✅ thin MCP wrapper: FastMCP registration + tool
-                    descriptions with few-shot examples; DJINNVIM_ROOT env
-                    var sets the sandbox root; v0.6: structured_output=False
-                    on every tool (plain-text results — the structured
-                    {"result": ...} form reached the model JSON-escaped)
-                    + descriptions cut to ~half
-tests/           ✅ 267 tests (motion, edit, substitute, registers, undo,
+                    descriptions with few-shot examples; v0.6:
+                    structured_output=False on every tool (plain-text
+                    results — the structured {"result": ...} form reached
+                    the model JSON-escaped) + descriptions cut to ~half;
+                    v0.11: async tools with injected Context — lazy client
+                    roots/list fetch, list_changed → stale-flag refetch,
+                    env roots pinned/exclusive
+tests/           ✅ 296 tests (motion, edit, substitute, registers, undo,
                     address offsets, i/a inserts, replacement unescaping,
                     at-each global edits, server round-trips, viewport
                     format + caret labels, benchmark gen/report; v0.9:
                     dogfood #4 echo regressions — exact at-each diff,
-                    compact batch-undo diff, exact write count)
+                    compact batch-undo diff, exact write count; v0.11:
+                    multi-root sandbox — traversal/symlink containment,
+                    env parsing, per-source refusals, write revalidation,
+                    server resolution chain)
 ```
 
 Verified end-to-end over the MCP stdio protocol (scripted client running the
@@ -1508,6 +1520,34 @@ Decisions:
   depending on mode; djinnvim's `write`, once allowed as a tool, is
   allowed across the whole sandbox — same shape as native
   `acceptEdits`, a comparable posture rather than a regression.
+
+**v0.11 is implemented and green (2026-07-20):** the multi-root sandbox,
+as specced above. New `roots.py` (env parsing, per-source sanity refusal,
+fallback chain); `Session` takes `roots: list[Path] | None` (None = not
+yet resolved), containment generalized to any-of-roots at the `open`
+choke point, relative paths resolve against a single root / fail loudly
+naming all roots when there are several, `write` revalidates against the
+current roots. Server side: all six tools became `async` with an
+injected `Context` — the lazy `roots/list` fetch is an awaited client
+request on the first tool call (env roots, when set, short-circuit it
+entirely); `notifications/roots/list_changed` sets a stale flag via the
+low-level server's notification-handler hook, and the next tool call
+refetches. Client root URIs are sanity-checked (`/`/`$HOME` refused,
+source named); refusals surface as `error:` tool results. Tool
+descriptions deliberately unchanged — the multi-root relative-path error
+is the announcement. 296 tests (29 new in `test_roots.py`: traversal,
+absolute-outside, symlink-inside-pointing-out, multi-root peers,
+relative-with-multiple-roots, env parsing incl. pathsep lists and the
+explicit-`/`-accepted case, per-source refusals, write-time
+revalidation, the server resolution chain incl. pinned-env and
+stale-refetch). New e2e (`e2e/e2e_roots.py`, real MCP stdio, NO env
+roots): client-granted root drives a relative open → outside path
+rejected → grant revoked mid-buffer via `list_changed` and `write`
+refuses → re-grant and the same `write` lands → two roots make a
+relative open fail naming both. All five prior e2es re-run green
+(the `DJINNVIM_ROOT` alias path). README gained a "Sandboxing" section
+(resolution chain, pinned env roots, the confines-the-agent sentence,
+the acceptEdits-shaped write asymmetry).
 
 ### Original plan
 

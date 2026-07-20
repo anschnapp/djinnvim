@@ -284,9 +284,15 @@ Exact matches / clean trials. Keyhole's composite and move-multi misses are almo
 3. **Every action echoes a viewport.** Navigation echoes where you landed; edits echo a diff. No silent state changes, ever.
 4. **Global awareness via search visibility, not content.** Match counts and one-line-per-hit listings compensate for the keyhole's blindness — never full-file dumps.
 
+## Sandboxing
+
+Every path is validated against a set of sandbox roots — resolved (symlinks followed) *before* the containment check, so a link inside a root pointing outside is rejected. Roots come from the first available source: the `DJINNVIM_ROOTS` env var (`PATH`-style separated list; `DJINNVIM_ROOT` works as a single-path alias) → the MCP client's `roots/list` grants (updates honored live; a buffer whose root is revoked refuses to `write`) → `CLAUDE_PROJECT_DIR` → the server's working directory. Env roots are exclusive: when set, client grants are ignored — a pinned boundary no client chatter can widen. `/` and `$HOME` are refused as roots from every non-explicit source.
+
+Two honest caveats. The sandbox confines the *agent* (model-generated paths, prompt injection), not a hostile local user — TOCTOU races are out of scope, matching the exposure of native editing tools. And permission granularity differs from native editors that can re-prompt per edit: djinnvim's `write`, once allowed as a tool, is allowed across the whole sandbox — the same posture as an editor in accept-edits mode, not a regression, but worth knowing.
+
 ## Roadmap
 
-- Polish the MCP tool surface (descriptions, error signposting, root-confinement hardening)
+- Polish the MCP tool surface (descriptions, error signposting)
 - A CLI companion for human use and scripting
 - Usage & setup documentation (deliberately postponed until the above settle)
 
