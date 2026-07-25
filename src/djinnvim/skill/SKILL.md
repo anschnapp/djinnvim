@@ -70,7 +70,10 @@ delete), `cip`/`cap`/`dip`/`dap` (paragraph), `dd`, `cc TEXT`, `D`,
 `A`/`I TEXT` (line end/start), `i`/`a TEXT` (before/after the cursor
 char), `cs"'` / `ds"` / `ysiw"` (surround). Changes need TEXT, deletes
 take none; everything after the first space is TEXT, verbatim (indent
-included: `o     x = 1`).
+included: `o     x = 1`). One trailing newline is stripped as the
+terminator; further ones are blank lines (`o body\n\n` inserts body plus
+one blank). `o`/`O` are line-wise — to insert below a multi-line
+statement, anchor on its LAST line, not its first.
 
 Registers: `yy` / `y<i|a><obj>` yank, `p`/`P` paste. `"name` prefix
 composes with the anchor: `at /def helper/ "fn dap` cuts the function,
@@ -89,6 +92,7 @@ lines). Flags `g`, `i`. **Regex and replacement are Python `re` syntax**
 write them plainly in the replacement. Both range addresses are
 inclusive; any address takes `+N`/`-N` — end on `/pat/-1` for "up to but
 not including". Zero matches is a loud error, never a silent no-op.
+Numeric addresses go stale after every edit; prefer pattern addresses.
 
 Line-shaped only: to remove whole blocks at every match use
 `edit 'at each /pat/ dap'`, not hand-counted ranges. Register ranges for
@@ -107,3 +111,7 @@ blocks text objects can't grab (function with internal blank lines):
    echo → `edit u` immediately.
 5. `write`, and check the reported changed-line count against what you
    expect.
+6. **Write before running anything against the file.** Tests, linters,
+   and file reads see only the disk — never unwritten buffer state. (A
+   disk change under an open buffer fails loudly on the next edit/write;
+   re-open to continue.)

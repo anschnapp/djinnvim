@@ -58,7 +58,9 @@ def execute(
     first/last are None when there is no viewport to render (yanks and
     register cuts echo their content instead)."""
     # Trailing spaces are preserved: TEXT like `I # ` keeps its trailing space.
-    command = command.lstrip().rstrip("\n")
+    # Exactly ONE trailing newline is stripped (the payload terminator);
+    # further ones are content: `o body\n\n` inserts body plus one blank line.
+    command = command.lstrip().removesuffix("\n")
     if registers is None:
         registers = {}
     saved = (buf.cursor.line, buf.cursor.col)

@@ -1760,3 +1760,64 @@ Also fixed this session: argparse `%`-interpolation bug in `cli.py`
 (the `substitute` subcommand help contained a bare `:%s/…`, which
 argparse expanded into a parser-internals dict in `--help`; escaped
 to `%%s`).
+
+## Dogfood #6 findings (2026-07-25, first external real-project session)
+
+First feedback from outside the benchmark loop: the user drove a real
+programming session in another project with **Opus 5** via the MCP tools
+(agent effectively cold on design.md; djinnvim use was required by the
+user's session rules). Task shape: ~240 lines of structural insertion
+(a 182-line class block as ONE anchored `O`, ~15 sequential pattern-
+anchored insertions with zero line-number recomputation), a
+`matches`-driven decision to introduce a helper (`is_free()`) from a
+5-site listing, and ranged `substitute` one-liners. Exact working
+result; ~30 tool calls. The agent's own retrospective named the
+design's two central bets unprompted: anchors stable under 240 lines of
+growth, and `matches` as the plan-the-refactor tool.
+
+Friction reported, triaged against the code:
+
+1. **Trailing blank lines swallowed by `o`/`O` — confirmed bug-shaped**
+   (~5 of ~30 calls were blank-line repair: `at /anchor/ O` with empty
+   TEXT after every block insertion ending in a blank). Root cause
+   `edit.py`'s top-level `rstrip("\n")` — ALL trailing newlines
+   stripped, violating the TEXT-verbatim convention for newlines
+   specifically. Not vim semantics (vim has no string payload); pure
+   TEXT-contract territory. **Fixed as v0.13** (below).
+2. **No multi-line patterns in `substitute`** (`\n` works in the
+   replacement, not the search — per-line `finditer`). One live hit
+   (two adjacent clamp lines rewritten as a unit); workarounds exist
+   (two commands, or rewrite-the-anchor-line with `\n` in the
+   replacement — the idiom the agent found itself). **Parked behind
+   the evidence gate** (user decision this session).
+3. **Buffer/disk divergence confusion** — `Read`/tests see the disk,
+   not the buffer; cost one confused tool call. Inherent to the
+   design; answered with guidance, not mechanism (v0.13 description +
+   SKILL.md additions). **Correction on the agent's report:** its
+   claimed mixed-tool hazard ("the next write silently clobbers a
+   native Edit change") is FALSE — `_check_fresh` runs before
+   edit/substitute/write, so a disk change under an open buffer fails
+   loudly ("changed on disk since open"). The loud direction was
+   verified in code; only the disk-lags-buffer direction is real, and
+   it is discipline-shaped.
+4. **`O` above a multi-line statement misplaces** (line-wise `o`/`O`
+   can't say "after this multi-line statement"; landed between the two
+   lines of a definition). Predictable, caught by the echo; answered
+   with the anchor-on-its-LAST-line idiom in guidance.
+5. **Numeric ranges (`:1188s/...`) stale the instant the file
+   changes** — worked only because the agent had just viewed the line.
+   Guidance: prefer pattern addresses.
+
+**v0.13 is implemented and green (2026-07-25):** the trailing-newline
+fix + the guidance pass. TEXT now strips exactly ONE trailing newline
+(the payload terminator — defensive against stray client newlines);
+further ones are content (`o body\n\n` inserts body plus one blank
+line; a stray double newline now yields a *visible* extra blank in the
+echo instead of a silently swallowed one — the right side of the loud/
+silent trade). Guidance additions in both the tool descriptions and
+SKILL.md: the trailing-newline rule, o/O-are-line-wise anchor-on-the-
+last-line idiom (`edit`), numeric-addresses-go-stale (`substitute`),
+and write-before-running-tests (`write` description; SKILL.md workflow
+rule 6, including the loud-staleness note). 316 tests (3 new, written
+failing-first with the live symptom: trailing blank kept on `o`/`O`,
+single terminator newline still stripped).

@@ -120,7 +120,11 @@ async def edit(command: str, ctx: Context | None = None) -> str:
     end/start), i/a TEXT (insert before / append after the cursor char —
     anchored, `a` lands after the match's FIRST char), cs<old><new>
     (cs"' turns "x" into 'x'), ds<char>, ysiw<char>. Changes need TEXT,
-    deletes take none; everything after the first space is TEXT, verbatim.
+    deletes take none; everything after the first space is TEXT, verbatim
+    (one trailing newline is stripped as the terminator; further ones are
+    blank lines: `o body\\n\\n` inserts body plus one blank). o/O are
+    line-wise — to insert below a multi-line statement, anchor on its
+    LAST line.
 
     Registers: yy / y<i|a><obj> yank, p/P paste below/above the cursor line
     (charwise: within it). `"name` prefix composes with the anchor:
@@ -152,6 +156,7 @@ async def substitute(command: str, ctx: Context | None = None) -> str:
     are Python re syntax (\\1 for groups). The pattern-range end is
     searched forward FROM the start and BOTH addresses are inclusive; any
     address takes +N/-N — end on `/pat/-1` for "up to but not including".
+    Numeric addresses go stale after every edit; prefer pattern addresses.
     Returns the count + a compact diff of changed lines; zero matches is a
     loud error; one undo step per command (edit("u") reverts an over-match
     whole).
@@ -192,7 +197,9 @@ async def matches(pattern: str, context: int = 0, ctx: Context | None = None) ->
 @mcp.tool(structured_output=False)
 async def write(ctx: Context | None = None) -> str:
     """Save the active buffer to disk. Returns confirmation + how many lines
-    changed since the last write. Buffers are in-memory until written."""
+    changed since the last write. Buffers are in-memory until written —
+    nothing else (tests, other tools, file reads) sees buffer changes, so
+    write BEFORE running anything against the file."""
     err = await _ensure_roots(ctx)
     return err if err else session.write()
 

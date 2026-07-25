@@ -164,6 +164,27 @@ def test_o_bare_inserts_blank_line():
     assert buf.lines == ["one", ""]
 
 
+def test_o_single_trailing_newline_is_terminator():
+    buf = make(["one"], line=0)
+    execute(buf, "o added\n")
+    assert buf.lines == ["one", "added"]
+
+
+def test_o_extra_trailing_newlines_are_blank_lines():
+    # one trailing newline is the payload terminator; further ones are
+    # content (dogfood #6: block insertions ending in a blank separator)
+    buf = make(["one"], line=0)
+    execute(buf, "o added\n\n")
+    assert buf.lines == ["one", "added", ""]
+    assert buf.cursor.line == 2
+
+
+def test_O_trailing_blank_kept():
+    buf = make(["target"], line=0)
+    execute(buf, "O block\n\n")
+    assert buf.lines == ["block", "", "target"]
+
+
 def test_O_inserts_above():
     buf = make(["one", "two"], line=1)
     execute(buf, "O middle")
