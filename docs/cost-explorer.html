@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>djinnvim benchmark — cost explorer</title>
+<title>djinnvim benchmark - cost explorer</title>
 <style>
   :root { color-scheme: light dark; }
   * { box-sizing: border-box; margin: 0; }
@@ -132,7 +132,7 @@
 </head>
 <body>
 <div class="viz-root">
-  <h1>djinnvim benchmark — cost per trial</h1>
+  <h1>djinnvim benchmark - cost per trial</h1>
   <div class="subtitle">Mean API cost (USD) per completed trial vs. file size. Aborted trials excluded.</div>
 
   <div class="filters">
@@ -169,7 +169,7 @@
 // Non-exact trials additionally carry "sem", the AST comparison of the trial's
 // output against the target: true = AST-equal (formatting-only divergence),
 // false = semantically wrong output (a silent failure). null would mean
-// unverifiable (output lost) — the current snapshot has none: every cell that
+// unverifiable (output lost) - the current snapshot has none: every cell that
 // lost its outputs was fully re-run and swapped in wholesale (see README).
 const DATA = {
   "haiku": {
@@ -409,67 +409,67 @@ const DATA = {
 
 const TASK_INFO = {
   "rename-trap": {
-    title: "rename-trap — rename a function across scattered call sites",
-    html: `<blockquote>"In pipeline.py, rename the function <code>fetch_records</code> to <code>load_records</code> — its definition and all its call sites."</blockquote>
+    title: "rename-trap - rename a function across scattered call sites",
+    html: `<blockquote>"In pipeline.py, rename the function <code>fetch_records</code> to <code>load_records</code> - its definition and all its call sites."</blockquote>
 <p>The tempting one-shot: <code>sed -i 's/fetch_records/load_records/g' pipeline.py</code>. But the file also contains a <em>different</em> function with a colliding prefix:</p>
-<pre><code>def fetch_records_cached(db, limit):   # a separate function —
+<pre><code>def fetch_records_cached(db, limit):   # a separate function -
     if limit not in _CACHE:            # must keep its name
         _CACHE[limit] = fetch_records(db, limit)   # only THIS call renames</code></pre>
-<p>Without a word boundary (<code>\\bfetch_records\\b</code>) the sed also produces <code>load_records_cached</code> — everywhere it appears. The file still parses, nothing errors, the agent reports success: a <b>silent corruption</b>. This exact miss happened in the benchmark (Haiku baseline, 500 lines).</p>`,
+<p>Without a word boundary (<code>\\bfetch_records\\b</code>) the sed also produces <code>load_records_cached</code> - everywhere it appears. The file still parses, nothing errors, the agent reports success: a <b>silent corruption</b>. This exact miss happened in the benchmark (Haiku baseline, 500 lines).</p>`,
   },
   "bump-trap": {
-    title: "bump-trap — change a default parameter value",
+    title: "bump-trap - change a default parameter value",
     html: `<blockquote>"In pipeline.py, the default timeout of <code>send_request</code> is too low: change it from 30 to 90."</blockquote>
 <p>Only <b>one</b> line may change:</p>
 <pre><code>def send_request(url, timeout=30, retries=3):   # ← the default: 30 → 90</code></pre>
-<p>But the file is salted with lookalikes that a broad replace destroys: half the call sites pass an <em>explicit</em> <code>timeout=30</code> — a deliberate choice by that caller, which must survive a change of the default — and an unrelated constant matches too:</p>
-<pre><code>POLL_INTERVAL = 30                         # not a timeout — keep
-    return send_request(url, timeout=30)   # caller's explicit choice — keep
-    return send_request(url)               # uses the default — keep</code></pre>
+<p>But the file is salted with lookalikes that a broad replace destroys: half the call sites pass an <em>explicit</em> <code>timeout=30</code> - a deliberate choice by that caller, which must survive a change of the default - and an unrelated constant matches too:</p>
+<pre><code>POLL_INTERVAL = 30                         # not a timeout - keep
+    return send_request(url, timeout=30)   # caller's explicit choice - keep
+    return send_request(url)               # uses the default - keep</code></pre>
 <p>A file-wide <code>s/timeout=30/timeout=90/</code> or <code>s/30/90/</code> "succeeds", changes the meaning of dozens of call sites, and nothing crashes.</p>`,
   },
   "delete-trap": {
-    title: "delete-trap — remove all debug calls",
+    title: "delete-trap - remove all debug calls",
     html: `<blockquote>"Remove all the <code>log_debug</code> calls from pipeline.py (keep the <code>log_debug</code> function definition itself)."</blockquote>
 <p>The tempting one-shot deletes every line matching <code>log_debug</code>. Two things break silently:</p>
-<pre><code>def log_debug(msg):                        # the definition — must survive
+<pre><code>def log_debug(msg):                        # the definition - must survive
     print(f'DEBUG: {msg}')
 
     log_debug('enter check_totals')        # ← these lines go
-    summary = log_debug_summary(stats)     # different function — must survive</code></pre>
-<p><code>log_debug_summary</code> is a name-collision decoy: a pattern like <code>/log_debug/d</code> deletes its call sites too, breaking live code paths — and deletes the definition the prompt explicitly said to keep.</p>`,
+    summary = log_debug_summary(stats)     # different function - must survive</code></pre>
+<p><code>log_debug_summary</code> is a name-collision decoy: a pattern like <code>/log_debug/d</code> deletes its call sites too, breaking live code paths - and deletes the definition the prompt explicitly said to keep.</p>`,
   },
   "quote-trap": {
-    title: "quote-trap — normalize quote style file-wide",
+    title: "quote-trap - normalize quote style file-wide",
     html: `<blockquote>"In pipeline.py, convert every single-quoted string literal to double quotes."</blockquote>
-<p>Thousands of quote changes — clearly a job for one regex like <code>s/'([^']*)'/"\\1"/g</code>. The trap is that comments contain <b>apostrophes</b>:</p>
+<p>Thousands of quote changes - clearly a job for one regex like <code>s/'([^']*)'/"\\1"/g</code>. The trap is that comments contain <b>apostrophes</b>:</p>
 <pre><code>    # note: caller's dict is not copied
     return f'{label}: {count}'</code></pre>
-<p>An apostrophe is an unpaired single quote: the regex pairs <code>caller'</code> with the next quote it finds and rewrites the wrong span — or, applied over the whole file, shifts every subsequent match off by one. The correct answer must treat comment lines differently from code, which no single blind regex does.</p>`,
+<p>An apostrophe is an unpaired single quote: the regex pairs <code>caller'</code> with the next quote it finds and rewrites the wrong span - or, applied over the whole file, shifts every subsequent match off by one. The correct answer must treat comment lines differently from code, which no single blind regex does.</p>`,
   },
   "composite": {
-    title: "composite — six heterogeneous edits in one task",
-    html: `<p>One prompt, six numbered changes — a compressed version of a real refactoring request: rename <code>fetch_records</code> → <code>load_records</code> (with the <code>_cached</code> decoy present), change a default value, delete all <code>log_debug</code> calls, change a constant, insert a new constant at a stated position, and thread a <code>logger</code> argument through <b>every</b> <code>send_request</code> call site. The last one is the structural trap — some call sites are multi-line:</p>
+    title: "composite - six heterogeneous edits in one task",
+    html: `<p>One prompt, six numbered changes - a compressed version of a real refactoring request: rename <code>fetch_records</code> → <code>load_records</code> (with the <code>_cached</code> decoy present), change a default value, delete all <code>log_debug</code> calls, change a constant, insert a new constant at a stated position, and thread a <code>logger</code> argument through <b>every</b> <code>send_request</code> call site. The last one is the structural trap - some call sites are multi-line:</p>
 <pre><code>    response = send_request(
         endpoint,                # a new \`logger,\` argument must be
-        timeout=7,               # inserted here — line-based sed
+        timeout=7,               # inserted here - line-based sed
     )                            # cannot see "the second argument"</code></pre>
-<p>Line-oriented tools match single lines; "add a second argument" on a call spread over four lines defeats them. This is the most representative task of real usage — and the one where exact-match grading mostly disagrees with semantic grading (argument-wrapping styles differ while the program is identical).</p>`,
+<p>Line-oriented tools match single lines; "add a second argument" on a call spread over four lines defeats them. This is the most representative task of real usage - and the one where exact-match grading mostly disagrees with semantic grading (argument-wrapping styles differ while the program is identical).</p>`,
   },
   "move-multi": {
-    title: "move-multi — gather scattered functions",
+    title: "move-multi - gather scattered functions",
     html: `<blockquote>"In pipeline.py, the three <code>check_*</code> functions are scattered through the file. Move them so they sit directly above <code>run_checks</code>, in this order: <code>check_ids</code>, <code>check_totals</code>, <code>check_names</code>. Keep exactly two blank lines between top-level functions and change nothing else."</blockquote>
-<p>There is <b>no search-and-replace answer at all</b>: nothing changes textually, text only <em>moves</em>. The solver must delete three function bodies from three different places and reinsert them at a fourth, in a stated order, with exact blank-line discipline — while never seeing the whole file. This is cut/yank/put register territory (djinnvim's home turf), and for read-the-file approaches the cost of "find everything, rewrite the region" grows with file size.</p>`,
+<p>There is <b>no search-and-replace answer at all</b>: nothing changes textually, text only <em>moves</em>. The solver must delete three function bodies from three different places and reinsert them at a fourth, in a stated order, with exact blank-line discipline - while never seeing the whole file. This is cut/yank/put register territory (djinnvim's home turf), and for read-the-file approaches the cost of "find everything, rewrite the region" grows with file size.</p>`,
   },
   "purge-blocks": {
-    title: "purge-blocks — delete every deprecated function",
-    html: `<blockquote>"In pipeline.py, several functions are marked deprecated with a <code># DEPRECATED: …</code> comment on the line directly above their def. Remove every deprecated function entirely — the comment line and the whole function below it. Keep exactly two blank lines between the remaining top-level definitions."</blockquote>
+    title: "purge-blocks - delete every deprecated function",
+    html: `<blockquote>"In pipeline.py, several functions are marked deprecated with a <code># DEPRECATED: …</code> comment on the line directly above their def. Remove every deprecated function entirely - the comment line and the whole function below it. Keep exactly two blank lines between the remaining top-level definitions."</blockquote>
 <p>At 10 000 lines this means removing <b>dozens</b> of variable-length multi-line blocks:</p>
 <pre><code># DEPRECATED: use resolve_offsets instead
 def normalize_totals(rows):
     for row in rows:
-        ...                     # block length varies — no fixed line count</code></pre>
-<p>The classic shortcut <code>sed '/DEPRECATED/,/^$/d'</code> deletes from the marker to the next blank line — but functions are separated by <em>two</em> blank lines, so every deletion site leaves a stray blank behind (or eats one too many): dozens of small, silent, off-by-one wounds. djinnvim's answer is a single anchored batch edit — <code>at each /# DEPRECATED/ dap</code> (<em>delete around paragraph</em> at every match) — while a Bash-less native agent must grind through every block by hand. This task produced the starkest cost numbers in the sweep (see the README's finding 3).</p>`,
+        ...                     # block length varies - no fixed line count</code></pre>
+<p>The classic shortcut <code>sed '/DEPRECATED/,/^$/d'</code> deletes from the marker to the next blank line - but functions are separated by <em>two</em> blank lines, so every deletion site leaves a stray blank behind (or eats one too many): dozens of small, silent, off-by-one wounds. djinnvim's answer is a single anchored batch edit - <code>at each /# DEPRECATED/ dap</code> (<em>delete around paragraph</em> at every match) - while a Bash-less native agent must grind through every block by hand. This task produced the starkest cost numbers in the sweep (see the README's finding 3).</p>`,
   },
 };
 
@@ -489,7 +489,7 @@ const svg = document.getElementById("chart");
 const tooltip = document.getElementById("tooltip");
 const wrap = document.querySelector(".chart-wrap");
 
-// Resolve a CSS variable to its current value — looked up at render time so a
+// Resolve a CSS variable to its current value - looked up at render time so a
 // theme change re-colors the SVG (whose attributes can't use var()) correctly.
 const cssColor = v => getComputedStyle(document.querySelector(".viz-root")).getPropertyValue(v).trim();
 
@@ -513,7 +513,7 @@ const mean = a => a.length ? a.reduce((s, x) => s + x.cost, 0) / a.length : null
 const trialMark = t => t.exact ? "" : t.sem === false ? "✗" : t.sem == null ? "?" : "*";
 
 // Silent-failure / unverifiable counts for one condition under the current
-// model+task selection (all sizes pooled) — shown next to the legend entries.
+// model+task selection (all sizes pooled) - shown next to the legend entries.
 function failCounts(cond) {
   let fails = 0, unknown = 0;
   for (const size of SIZES)
@@ -567,7 +567,7 @@ function niceMax(v) {
   return Math.ceil(v);
 }
 
-// What the chart currently shows, one entry per size column — kept around so
+// What the chart currently shows, one entry per size column - kept around so
 // the hover handler can find the nearest column without recomputing.
 let current = []; // per size: {size, x, series:[{key,label,color,mean,trials}]}
 
@@ -584,7 +584,7 @@ function render() {
     }),
   }));
 
-  // y scale: fit the means — and, in single-task view, the individual trial
+  // y scale: fit the means - and, in single-task view, the individual trial
   // dots too, since they spread wider than the means.
   let maxV = 0;
   for (const col of current)
@@ -670,10 +670,10 @@ function render() {
   }
 
   document.getElementById("note").textContent =
-    (singleTask ? "Faint dots are individual trials (a red ✗ is a trial whose output was semantically wrong — a silent failure); large markers are cell means. " :
+    (singleTask ? "Faint dots are individual trials (a red ✗ is a trial whose output was semantically wrong - a silent failure); large markers are cell means. " :
       "Each point is the mean over all 7 tasks × 3 trials at that size. ") +
     (state.model === "sonnet" && (state.task === "purge-blocks" || state.task === "__all__")
-      ? "Note: sonnet no-bash on purge-blocks @ 10,000 lines required a raised per-trial budget ($8; the default $3 cap aborted five straight attempts) — its two clean trials cost $4.61 and $4.66."
+      ? "Note: sonnet no-bash on purge-blocks @ 10,000 lines required a raised per-trial budget ($8; the default $3 cap aborted five straight attempts) - its two clean trials cost $4.61 and $4.66."
       : "");
 
   renderTable();
@@ -693,7 +693,7 @@ function renderTable() {
     return `<tr><td>${s.label}</td>${cells}</tr>`;
   }).join("");
   document.getElementById("tableWrap").innerHTML =
-    `<table><thead><tr><th>condition</th>${SIZES.map(s => `<th>${Number(s).toLocaleString("en-US")} lines — mean (trials)</th>`).join("")}</tr></thead>` +
+    `<table><thead><tr><th>condition</th>${SIZES.map(s => `<th>${Number(s).toLocaleString("en-US")} lines - mean (trials)</th>`).join("")}</tr></thead>` +
     `<tbody>${rows}</tbody></table>` +
     `<div class="note">* = not byte-identical but AST-equal (formatting-only divergence) &nbsp;·&nbsp; ✗ = semantically wrong output (silent failure). See README for exact vs. semantic grading.</div>`;
 }

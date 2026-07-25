@@ -1745,6 +1745,17 @@ dormant. Known accepted risk, flagged at decision time: the `djinnvim`
 name stays unreserved on PyPI (a squatter would poison a later
 `pipx install djinnvim`); publishing once would lock it.
 
+Later same session: static mermaid charts replaced by a means table
+(cost stated as Claude API usage pricing); context-consumption
+paragraph added to finding 2 (cache-write tokens as proxy, caveat in
+methodology fine print); explorer embedded up front as a clickable
+screenshot `docs/explorer-preview.png` (iframes are stripped from
+GitHub READMEs) — regenerate on explorer changes via
+`google-chrome --headless=new --window-size=1200,700
+--screenshot=docs/explorer-preview.png docs/cost-explorer.html`.
+Em dashes swept to plain hyphens in README + explorer prose (user
+preference; the `<td>—</td>` empty-cell placeholder stays).
+
 Also fixed this session: argparse `%`-interpolation bug in `cli.py`
 (the `substitute` subcommand help contained a bare `:%s/…`, which
 argparse expanded into a parser-internals dict in `--help`; escaped
