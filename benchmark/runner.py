@@ -79,6 +79,7 @@ def build_cmd(condition: str, model: str, prompt: str, workdir: Path,
     if condition == "keyhole":
         mcp = {"mcpServers": {"djinnvim": {
             "command": str(DJINNVIM_BIN),
+            "args": ["mcp"],
             "env": {"DJINNVIM_ROOT": str(workdir)},
         }}}
         allowed = ",".join(f"mcp__djinnvim__{t}" for t in DJINNVIM_TOOLS)

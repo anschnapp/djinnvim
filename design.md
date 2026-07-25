@@ -1654,3 +1654,70 @@ protocol question settled here); (3) CLI verbs (thin `Session`
 mapping + quoting check); (4) CLI dogfood *before* the skill exists,
 to learn what SKILL.md must say; (5) SKILL.md + `install-skill`;
 (6) packaging + trusted-publishing CI; then the one-shot release.
+
+**v0.12 is implemented and green (2026-07-25): build-order steps 1–6
+all landed** (same session; only the release itself remains). The
+open questions, settled while building:
+
+- **Socket protocol: minimal newline-delimited JSON**, one request per
+  connection (`{"v", "op", "args"}` → `{"ok", "result"/"error"}`), NOT
+  MCP framing — the client would need a full MCP client for six
+  string-in/string-out calls, and parity lives in the shared `Session`,
+  not the wire format. Tool-level `error: ...` strings are ok-results
+  (loud errors are content); `ok: false` means the daemon itself broke.
+- **Idle timeout: 1800 s default**, `DJINNVIM_IDLE_SECONDS` override
+  (tests use fractions of a second).
+- **Session discriminator chain: `DJINNVIM_SESSION` →
+  `CLAUDE_CODE_SESSION_ID` → parent-shell PID.** The middle rung was
+  discovered live: Claude Code exports `CLAUDE_CODE_SESSION_ID` into
+  Bash, session-stable across calls — so under Claude Code the daemon
+  keys correctly with zero configuration and no skill-set env var.
+- **Quoting: strict one-argument rule.** `djinnvim edit at /p/ ciw x`
+  (unquoted) is a loud exit-2 error with a quote-it hint — re-joining
+  argv on spaces would silently collapse the whitespace TEXT preserves
+  verbatim, exactly the silent-mangling class the design forbids.
+  Validated in dogfood: the error was hit once, instantly self-fixing.
+- **Exit codes:** 0 ok, 1 = editor said `error: ...` (stdout carries
+  it), 2 = usage/daemon failure.
+- **`install-skill` target: `~/.claude/skills/djinnvim/SKILL.md`**
+  default, `--project` for `./.claude/skills`. SKILL.md ships as
+  package data (version-locked, verified present in the built wheel).
+
+Implementation: `cli.py` (argparse subcommands: `mcp`, the six verbs,
+`status`, `shutdown [--all]`, `install-skill`, internal `daemon`;
+bare `djinnvim` still runs the MCP server until configs flip — the
+benchmark runner already flipped to `args: ["mcp"]`), `daemon.py`
+(socket under `$XDG_RUNTIME_DIR/djinnvim/` keyed by
+sha256(sorted roots + discriminator); auto-spawn via
+`python -m djinnvim daemon` with roots+discriminator pinned in env;
+bind-exclusivity spawn races; version handshake on every request —
+stale daemon replies restart + exits, client respawns; `status` and
+`shutdown` deliberately work across versions so pinging can't kill and
+killing always works), `__main__.py`, `skill/SKILL.md` (built from the
+tool descriptions + dogfood findings), `.github/workflows/publish.yml`
+(test → build → trusted publishing on `v*` tags; PyPI-side publisher
+config is a pre-release TODO, as is the LICENSE file). 313 tests
+(17 new: socket keying, auto-spawn + cross-request state, version
+mismatch restart, idle exit, shutdown, malformed requests, CLI
+dispatch/quoting/exit codes, install-skill); new `e2e/e2e_cli.py`
+over the real console script (fresh process per verb: over-matching
+`:%s//g` caught in the diff → `u` → scoped redo → exact target →
+status/shutdown).
+
+**CLI dogfood (#5, 2026-07-25, same session, warm Fable):** composite
+task from the benchmark generator (150 lines, seed 7, 6 heterogeneous
+edits) driven entirely through the CLI from agent Bash calls — fresh
+shell per command, exactly the skill's operating shape. **Exact target
+match, ~14 calls, file never read.** Findings that shaped SKILL.md:
+(1) agent cwd/env do NOT persist between shell calls (the harness even
+resets cwd), so the skill's rule is "pin `DJINNVIM_ROOTS` inside every
+command"; (2) the `CLAUDE_CODE_SESSION_ID` fallback held state across
+all ~14 fresh shells with zero setup; (3) three operator slips —
+unquoted command, unescaped `(` in two patterns — all failed loudly
+with the buffer untouched (the paren-escaping papercut got its own
+SKILL.md line: escape parens in the PATTERN, write them plainly in the
+replacement); (4) `matches -C 1` + `motion :N` fully covered the
+look-at-a-call-site need; no `viewport` tool wanted.
+
+**Remaining before release:** add LICENSE (Apache 2.0, user's GitHub
+flow), configure the PyPI trusted publisher, then tag `v0.1.0`.

@@ -2,13 +2,14 @@
 name = "djinnvim"
 version = "0.0.1"
 description = "Vim-inspired, pattern-anchored keyhole editing for AI agents (MCP server + CLI)"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "mcp>=1.0",
 ]
 
 [project.scripts]
-djinnvim = "djinnvim.server:main"
+djinnvim = "djinnvim.cli:main"
 
 [dependency-groups]
 dev = [
