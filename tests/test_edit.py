@@ -420,6 +420,56 @@ def test_failed_object_after_anchor_restores_cursor():
     assert buf.cursor.col == 0
 
 
+# --- anchor offsets (v0.14) ---
+
+BANNER = ["def run():", "    pass", "", "# ---", "# Merge logic", "# ---", "x = 1"]
+
+
+def test_anchored_offset_minus_inserts_above_banner():
+    buf = make(list(BANNER))
+    summary, first, last = execute(buf, "at /# Merge logic/-1 O NEW")
+    assert buf.lines[3] == "NEW"          # above the banner's top # ---
+    assert buf.lines[4] == "# ---"
+    assert "(match 1 of 1, offset -1)" in summary
+
+
+def test_anchored_offset_plus():
+    buf = make(list(BANNER))
+    execute(buf, "at /# Merge logic/+1 o NEW")   # below the closing # ---
+    assert buf.lines[6] == "NEW"
+    assert buf.lines[7] == "x = 1"
+
+
+def test_anchored_offset_is_linewise_column_zero():
+    buf = make(["alpha beta", "gamma delta"])
+    # match lands mid-line; the offset line's cursor must be at col 0
+    summary, _, _ = execute(buf, "at /delta/-1 ciw X")
+    assert buf.lines[0] == "X beta"       # ciw at col 0 of the offset line
+
+
+def test_anchored_offset_composes_with_ordinal():
+    buf = make(["a", "foo", "b", "foo", "c"])
+    summary, _, _ = execute(buf, "at 2nd /foo/+1 cc END")
+    assert buf.lines[4] == "END"
+    assert "(match 2 of 2, offset +1)" in summary
+
+
+def test_anchored_offset_out_of_range_is_loud_and_restores():
+    buf = make(["one", "two"], line=1, col=2)
+    with pytest.raises(EditError, match="lands outside the file"):
+        execute(buf, "at /one/-3 dd")
+    assert (buf.cursor.line, buf.cursor.col) == (1, 2)
+    assert buf.lines == ["one", "two"]
+    assert not buf.dirty
+
+
+def test_anchor_without_offset_keeps_match_column():
+    buf = make(["say hello there"])
+    summary, _, _ = execute(buf, "at /hello/ ciw hi")
+    assert buf.lines == ["say hi there"]
+    assert "offset" not in summary
+
+
 # --- parse errors ---
 
 def test_change_without_text_is_loud():

@@ -1821,3 +1821,83 @@ and write-before-running-tests (`write` description; SKILL.md workflow
 rule 6, including the loud-staleness note). 316 tests (3 new, written
 failing-first with the live symptom: trailing blank kept on `o`/`O`,
 single terminator newline still stripped).
+
+## Dogfood #7 findings (2026-07-25, second external real-project session)
+
+Same real project as #6, again Opus 5 over MCP, post-v0.13. Result good
+(pattern anchors held under hundreds of shifted lines; a 187-line class
+insert in one call with verbatim indentation; `matches`-then-`:%s` for
+twin guard sites; write's changed-count as sanity check). Friction,
+triaged against the code:
+
+1. **Mid-expression edits** (cc-replacing one comprehension line with two,
+   hand-typing both indents) — real, but partly an idiom gap: capturing
+   the indent with a regex group (`:s/^( +)tail/\1new\n\1  more/`) already
+   avoids retyping it; nothing taught it. Not a second hit for multi-line
+   patterns (the pattern here was single-line; replacement `\n` is
+   supported). → guidance.
+2. **"Cursor marker eats a column" — claim checked and FALSE byte-wise:**
+   the `→ ` prefix is exactly as wide as other lines' two-space prefix
+   (`viewport.py` render). The friction is perceptual — the model can't
+   see glyph alignment and `→` reads wide. Same weakness class the
+   labeled caret answers; answered with one guidance line ("indentation
+   shown is exact"), marker-style ablation noted as an option if it
+   recurs.
+3. **Insert-above-a-comment-banner cost 3 calls** — accurate; the
+   backward-search idiom (`?^# ---` then `O`) is also 3. → anchor
+   offsets (below), the one-call form.
+4. **Regex escaping on long anchors** (anchor as long as the old_string
+   for long unique lines) — known papercut; a literal anchor form stays
+   **parked** behind the evidence gate.
+5. **No whole-buffer diff before write** — true; confidence came from
+   py_compile + tests (the SKILL.md workflow). → write preview (below).
+
+**Auto-save considered and rejected (user question, settled in
+conversation):** auto-saving every edit would (a) gut the
+permission-management claim — "nothing touches disk until write" and the
+allow-edit-gate-write granularity both depend on the buffer boundary —
+and (b) put every mid-refactor intermediate state on disk for tests/
+watchers to see. The buffer stays; the #6/#7 confusion is a *visibility*
+problem, answered by making the pending state inspectable (the preview),
+not by eliminating it.
+
+## v0.14 (implemented and green, 2026-07-25)
+
+The three dogfood #7 items, decided in conversation:
+
+- **Anchor offsets on the anchored form:** `at [Nth] /pattern/[+N|-N]
+  <cmd>` — after choosing the match, the cursor moves N whole lines and
+  lands at column 0 (line-wise, mirroring v0.5's substitute address
+  offsets; without an offset the match column is kept as before).
+  Out-of-range offsets are loud and touch nothing; the summary note
+  becomes `(match i of n, offset -1)`. `at each` deliberately NOT
+  extended (its per-match column precision is the point; an offset there
+  breaks site revalidation). Banner idiom in the `edit` description:
+  `at /# Merge logic/-1 O text` inserts above the banner the match sits
+  inside — one call, was three.
+- **Write preview:** `write(preview=True)` / CLI `djinnvim write
+  --preview` — renders the full pending buffer-vs-disk ±diff via the
+  shared `diff_lines` (disk-side pre-edit numbering, DIFF_CAP elision)
+  and writes nothing. Session grew `_saved_delta` (SequenceMatcher,
+  autojunk=False — the dogfood #4 lesson); the real write's changed
+  count is now `len(_saved_delta)`, so preview and write report the
+  same number. Known honest caveat: this diff IS difflib-aligned
+  (unlike at-each's exact per-site tuples) — with no operation-level
+  spans for accumulated edits it's the only option; content is exact,
+  alignment around repeated lines may pick an equivalent pairing.
+  Staleness still checks first (a diff against a changed disk would
+  lie); preview skips the write-time root revalidation (read-only).
+- **Guidance pass** (descriptions + SKILL.md): the indent-capture
+  recipe (`substitute`), the offset/banner idiom (`edit`), the
+  arrow-is-exactly-two-chars note (`open` description; SKILL.md
+  workflow rule 4), preview in the `write` description and SKILL.md
+  (verb list + workflow rule 5).
+
+326 tests (10 new: offsets — above/below/linewise-col-0/ordinal-compose/
+out-of-range-restores/no-offset-keeps-column; preview — diff-without-
+writing + count parity, clean-buffer, pure-insertion and pure-deletion
+rows; CLI `--preview` dispatch). New e2e (`e2e/e2e_preview_offsets.py`,
+real MCP stdio): one-call insert above the banner with `-1`, loud
+out-of-range, two pending edits reviewed with `preview=True` (disk
+byte-identical), write reports the same count, post-write preview clean.
+All prior e2es re-run green.

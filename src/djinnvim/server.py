@@ -76,7 +76,8 @@ async def open(path: str, ctx: Context | None = None) -> str:
     pattern with `motion`, not by reading. Then: `matches` to see all sites
     of a pattern, `edit` for vim normal-mode edits (text objects, whole
     blocks/paragraphs, registers, undo), `substitute` for ex-style regex
-    line edits."""
+    line edits. In every viewport the cursor line's `→ ` prefix is exactly
+    as wide as other lines' two-space prefix — indentation shown is exact."""
     err = await _ensure_roots(ctx)
     return err if err else session.open(path)
 
@@ -103,7 +104,10 @@ async def edit(command: str, ctx: Context | None = None) -> str:
     `at 2nd /pattern/ <cmd>`). The anchor lands at the START of the match —
     anchor on the exact text to change: `at /15\\)/ ciw 60` changes the 15
     in `retries(15)`; `at /retries=15/ ciw 60` would change `retries`.
-    <cmd> is an edit command, never a motion.
+    <cmd> is an edit command, never a motion. A `+N`/`-N` after the closing
+    slash moves the anchor N whole lines (cursor at column 0):
+    `at /# Merge logic/-1 O text` inserts above the line ABOVE the match —
+    e.g. above a comment banner the match sits inside.
 
     `at each /pattern/ <cmd>` applies the command at EVERY match (top to
     bottom, cursor at each match start) and returns a compact ±diff instead
@@ -157,6 +161,9 @@ async def substitute(command: str, ctx: Context | None = None) -> str:
     searched forward FROM the start and BOTH addresses are inclusive; any
     address takes +N/-N — end on `/pat/-1` for "up to but not including".
     Numeric addresses go stale after every edit; prefer pattern addresses.
+    To rewrite one line into several without retyping its indentation,
+    capture it: `:s/^( +)old_tail/\\1new\\n\\1    second line/` (`\\n` in
+    the replacement inserts a line break).
     Returns the count + a compact diff of changed lines; zero matches is a
     loud error; one undo step per command (edit("u") reverts an over-match
     whole).
@@ -195,13 +202,15 @@ async def matches(pattern: str, context: int = 0, ctx: Context | None = None) ->
 
 
 @mcp.tool(structured_output=False)
-async def write(ctx: Context | None = None) -> str:
+async def write(preview: bool = False, ctx: Context | None = None) -> str:
     """Save the active buffer to disk. Returns confirmation + how many lines
     changed since the last write. Buffers are in-memory until written —
     nothing else (tests, other tools, file reads) sees buffer changes, so
-    write BEFORE running anything against the file."""
+    write BEFORE running anything against the file. preview=True writes
+    NOTHING and returns the pending ±diff (buffer vs disk, disk line
+    numbers) — the final review before committing."""
     err = await _ensure_roots(ctx)
-    return err if err else session.write()
+    return err if err else session.write(preview)
 
 
 def main() -> None:

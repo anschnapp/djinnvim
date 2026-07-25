@@ -47,9 +47,14 @@ def test_verbs_map_to_ops(calls, capsys):
         ("edit", {"command": "at /old/ ciw new"}),
         ("substitute", {"command": ":%s/a/b/g"}),
         ("matches", {"pattern": "parse", "context": 1}),
-        ("write", {}),
+        ("write", {"preview": False}),
     ]
     assert capsys.readouterr().out == "ok-result\n" * 6
+
+
+def test_write_preview_flag(calls, capsys):
+    assert cli.main(["write", "--preview"]) == 0
+    assert calls == [("write", {"preview": True})]
 
 
 def test_unquoted_command_is_a_loud_error(calls, capsys):

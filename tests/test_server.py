@@ -164,6 +164,37 @@ def test_write_changed_count_exact_on_repetitive_files(tmp_path, monkeypatch):
     assert "41 line(s) changed" in out
 
 
+def test_write_preview_shows_diff_and_writes_nothing(sample):
+    tool(server.open("config.py"))
+    tool(server.edit("at /opts = /ciw options"))
+    before = sample.read_text()
+    out = tool(server.write(preview=True))
+    assert "1 line(s) differ from disk" in out
+    assert "nothing written" in out
+    assert "- 2      opts = {}" in out
+    assert "+ 2      options = {}" in out
+    assert sample.read_text() == before          # disk untouched
+    assert server.session.active.dirty           # still pending
+    # the real write afterwards reports the same count
+    assert "1 line(s) changed" in tool(server.write())
+
+
+def test_write_preview_clean_buffer(sample):
+    tool(server.open("config.py"))
+    out = tool(server.write(preview=True))
+    assert out.startswith("no unwritten changes")
+
+
+def test_write_preview_covers_insertions_and_deletions(sample):
+    tool(server.open("config.py"))
+    tool(server.edit("at /def parse_config/ O # header"))
+    tool(server.edit('at /key, val/ dd'))
+    out = tool(server.write(preview=True))
+    assert "2 line(s) differ from disk" in out
+    assert "+ 1  # header" in out                # pure insertion: + only
+    assert '- 4          key, val = line.split("=")' in out  # pure deletion: - only
+
+
 def test_full_session_flow(sample):
     """The design.md example session shape: open, motion, edit, write."""
     tool(server.open("config.py"))

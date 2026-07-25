@@ -2,6 +2,9 @@
 
 Anchored form (preferred): `at /pattern/ <command>` — search, then apply.
 Optional ordinal: `at 2nd /pattern/ <command>` (2nd match after cursor).
+Optional line offset (v0.14, mirrors substitute's address offsets):
+`at /pattern/-1 <command>` — the cursor lands N lines above/below the
+match, at column 0 (line-wise, like ex offsets).
 Anchored summaries carry the ambiguity count: `changed line 9 (match 1 of 3)`.
 Global form (v0.8): `at each /pattern/ <command>` — one edit command applied
 at EVERY match (per match, column-precise, bottom-up, transactional, one
@@ -34,7 +37,7 @@ class EditError(Exception):
     """Loud, specific failure (e.g. 'no enclosing ( on line 80')."""
 
 
-_ANCHOR = re.compile(r"^at\s+(?:(\d+)(?:st|nd|rd|th)\s+)?/((?:\\.|[^/])*)/\s*")
+_ANCHOR = re.compile(r"^at\s+(?:(\d+)(?:st|nd|rd|th)\s+)?/((?:\\.|[^/])*)/([+-]\d+)?\s*")
 _EACH = re.compile(r"^at\s+each\s+/((?:\\.|[^/])*)/\s*")
 _OBJECT_CMD = re.compile(r"^([cd])([ia])([wWp(){}\[\]\"'`])(?:\s(.*))?$", re.DOTALL)
 _INSERT_CMD = re.compile(r"^(cc|C|o|O|A|I|i|a)(?:\s(.*))?$", re.DOTALL)
@@ -93,6 +96,7 @@ def execute(
     if m:
         ordinal = int(m.group(1) or 1)
         pattern = m.group(2)
+        offset = int(m.group(3) or 0)
         rest = command[m.end():]
         if not rest:
             raise EditError("anchored form needs a command: at /pattern/ <cmd>")
@@ -108,8 +112,23 @@ def execute(
         after = [i for i, h in enumerate(hits) if h > saved]
         start = after[0] if after else 0
         chosen = (start + ordinal - 1) % len(hits)
-        buf.cursor.line, buf.cursor.col = hits[chosen]
+        line, col = hits[chosen]
+        if offset:
+            # Line-wise, like ex address offsets: the cursor lands at
+            # column 0 of the offset line, not at the match column.
+            target = line + offset
+            if not 0 <= target < len(buf.lines):
+                raise EditError(
+                    f"offset {m.group(3)} from the match on line {line + 1} "
+                    f"lands outside the file (1–{len(buf.lines)})"
+                )
+            line, col = target, 0
+        buf.cursor.line, buf.cursor.col = line, col
         anchor_note = f" (match {chosen + 1} of {len(hits)})"
+        if offset:
+            anchor_note = (
+                f" (match {chosen + 1} of {len(hits)}, offset {m.group(3)})"
+            )
         command = rest
 
     if reg_name is None:

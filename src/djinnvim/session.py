@@ -166,7 +166,7 @@ class Session:
             out.append(f"... and {len(hit_lines) - MATCHES_CAP} more lines")
         return "\n".join(out)
 
-    def write(self) -> str:
+    def write(self, preview: bool = False) -> str:
         buf = self.active
         if buf is None:
             return "error: no active buffer — call open(path) first"
@@ -174,6 +174,15 @@ class Session:
             self._check_fresh(buf)
         except edit_mod.EditError as e:
             return f"error: {e}"
+        if preview:
+            delta = _saved_delta(buf)
+            if not delta:
+                return f"no unwritten changes — buffer matches {buf.path}"
+            head = (
+                f"unwritten changes in {buf.path}: {len(delta)} line(s) "
+                "differ from disk (nothing written)"
+            )
+            return head + "\n" + substitute_mod.diff_lines(delta)
         # Defense in depth: a buffer opened under a since-revoked root
         # (client roots/list shrank) must fail loudly instead of writing.
         if not self._contained(buf.path):
@@ -182,12 +191,29 @@ class Session:
                 f"({self._roots_display()}) — access was revoked; not written"
             )
 
-        changed = sum(
-            max(i2 - i1, j2 - j1)
-            for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(
-                None, buf.saved_lines, buf.lines, autojunk=False
-            ).get_opcodes()
-            if tag != "equal"
-        )
+        changed = len(_saved_delta(buf))
         buf.write()
         return f"wrote {buf.path} ({len(buf.lines)} lines, {changed} line(s) changed)"
+
+
+def _saved_delta(buf: Buffer) -> list[tuple[int, str | None, str | None]]:
+    """Changed-tuples between the on-disk snapshot (saved_lines) and the
+    buffer, for diff_lines. Line numbers are disk-side (pre-edit), matching
+    the substitute-diff convention. autojunk=False: popular lines (blanks)
+    must not wreck alignment (dogfood #4 write-count bug)."""
+    delta: list[tuple[int, str | None, str | None]] = []
+    sm = difflib.SequenceMatcher(None, buf.saved_lines, buf.lines, autojunk=False)
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == "equal":
+            continue
+        olds = buf.saved_lines[i1:i2]
+        news = buf.lines[j1:j2]
+        for k in range(max(len(olds), len(news))):
+            delta.append(
+                (
+                    i1 + k,
+                    olds[k] if k < len(olds) else None,
+                    news[k] if k < len(news) else None,
+                )
+            )
+    return delta

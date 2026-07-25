@@ -49,6 +49,8 @@ die with it; only `write` touches disk). Exit codes: 1 = the editor said
 - `djinnvim edit CMD` — vim normal-mode edit (details below).
 - `djinnvim substitute CMD` — ex command (details below).
 - `djinnvim write` — save the active buffer; reports lines changed.
+  `write --preview` shows the full pending buffer-vs-disk ±diff without
+  writing — the final review before committing.
 
 ## edit
 
@@ -56,6 +58,9 @@ Anchored form (preferred): `at /pattern/ <cmd>` (ordinal: `at 2nd /pat/
 <cmd>`). **The anchor lands at the START of the match — anchor on the
 exact text to change:** `at /15\)/ ciw 60` changes the 15 in
 `retries(15)`; `at /retries=15/ ciw 60` would change `retries`.
+A `+N`/`-N` after the closing slash moves the anchor N whole lines
+(cursor at column 0): `at /# Merge logic/-1 O text` inserts above the
+line ABOVE the match — e.g. above a comment banner the match sits inside.
 
 `at each /pattern/ <cmd>` applies one edit command at EVERY match
 (transactional: any failure changes nothing; one undo step; returns a
@@ -93,6 +98,9 @@ write them plainly in the replacement. Both range addresses are
 inclusive; any address takes `+N`/`-N` — end on `/pat/-1` for "up to but
 not including". Zero matches is a loud error, never a silent no-op.
 Numeric addresses go stale after every edit; prefer pattern addresses.
+To rewrite one line into several without retyping its indentation,
+capture it: `:s/^( +)old_tail/\1new\n\1    second line/` (`\n` in the
+replacement inserts a line break).
 
 Line-shaped only: to remove whole blocks at every match use
 `edit 'at each /pat/ dap'`, not hand-counted ranges. Register ranges for
@@ -108,9 +116,10 @@ blocks text objects can't grab (function with internal blank lines):
 3. Edit smallest-first tool: one-site → anchored `edit`; many-line regex
    → `substitute`; many-site structural → `at each`.
 4. **Read every echo.** The diff/viewport is the verification; a wrong
-   echo → `edit u` immediately.
-5. `write`, and check the reported changed-line count against what you
-   expect.
+   echo → `edit u` immediately. (The cursor line's `→ ` prefix is exactly
+   as wide as other lines' two-space prefix — indentation shown is exact.)
+5. `write --preview` for a final buffer-vs-disk diff, then `write`, and
+   check the reported changed-line count against what you expect.
 6. **Write before running anything against the file.** Tests, linters,
    and file reads see only the disk — never unwritten buffer state. (A
    disk change under an open buffer fails loudly on the next edit/write;

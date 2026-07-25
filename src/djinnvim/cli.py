@@ -78,8 +78,8 @@ def _run_matches(args: argparse.Namespace) -> int:
     return _request("matches", {"pattern": args.pattern, "context": args.context})
 
 
-def _run_write(_args: argparse.Namespace) -> int:
-    return _request("write", {})
+def _run_write(args: argparse.Namespace) -> int:
+    return _request("write", {"preview": args.preview})
 
 
 def _run_install_skill(args: argparse.Namespace) -> int:
@@ -181,6 +181,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func=_run_matches)
 
     sp = sub.add_parser("write", help="save the active buffer to disk")
+    sp.add_argument(
+        "--preview",
+        action="store_true",
+        help="show the pending buffer-vs-disk diff without writing",
+    )
     sp.set_defaults(func=_run_write)
 
     sp = sub.add_parser(
