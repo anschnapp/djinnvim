@@ -1564,3 +1564,93 @@ Benchmark keyhole sessions against the read-whole-file-then-edit baseline:
 - Text-object resolution: implement bracket/quote matching directly (simple scans); `t` object via a lenient tag scanner. Optionally back objects with tree-sitter later for language-aware `if`/function objects — but keep the vim surface syntax.
 - Regex dialect: document it clearly in tool descriptions (recommend Rust `regex` / RE2 semantics; no lookbehind) so the model doesn't assume PCRE.
 - Tool descriptions in the MCP schema should include 2–3 few-shot examples each — in-context examples materially improve command formation.
+
+## CLI + skill: distribution & daemon lifecycle (decided 2026-07-25)
+
+First slice of the post-benchmark CLI phase, settled in conversation;
+builds on the daemon + thin client decision under "Interfaces".
+
+**Skill is CLI-only — the MCP ships without one.** The MCP's tool
+descriptions ARE its skill: the whole benchmark ran cold agents on
+descriptions alone (sonnet keyhole semantically 63/63), so "works cold
+from descriptions" is a *measured* claim a bundled skill would only
+dilute — and skills are a Claude-Code concept while MCP must carry any
+client, and a second copy of the guidance in context is the same
+hand-sync drift hazard as the cost explorer's mirrored task text. If
+discoverability ever fails (haiku-style unfetched schema), the fix is
+descriptions/naming, not a skill. The CLI gets the skill because it has
+no schema channel at all; SKILL.md plays exactly the role the tool
+descriptions play on the MCP side, and is built from them as planned.
+
+**Distribution: one package, one channel (combined — no split).** A
+separate CLI package would mean duplicated core or two version-matched
+packages, bought for nothing; the CLI is a thin client around the same
+`Session` the MCP wraps. Single PyPI package, no `[cli]` extras
+(FastMCP is light; always installed). Blessed paths: `uvx djinnvim mcp`
+in MCP configs (zero-install, self-updating), `pipx install djinnvim`
+for CLI+skill users (skill needs the binary durably on PATH). Git-URL
+installs (`uvx --from git+…`, `pipx install git+…`) documented for
+advanced users — they work pre-PyPI, so the install story can be
+beta-tested before publishing. Release mechanics: PyPI trusted
+publishing (OIDC, no tokens) via a GitHub Actions workflow firing on
+version tags. **Docker rejected:** host-vs-container path identity
+breaks `DJINNVIM_ROOTS`/roots-list semantics (the conversation talks in
+host paths), and its confinement value duplicates the v0.11 sandbox —
+the product's own feature.
+
+**Command surface: subcommands, settled before first publish** (while
+breaking changes are free): `djinnvim mcp` = the stdio server; CLI
+verbs mirror the six tool names (`open`, `motion`, `edit`, `matches`,
+`substitute`, `write`) so the skill reuses the benchmark-validated
+vocabulary; `djinnvim install-skill` writes the packaged SKILL.md into
+place (skill ships as package data → version-locked with the binary,
+sync problem dissolved); `djinnvim status` / `djinnvim shutdown` make
+the daemon discoverable and killable — "hidden" must mean "auto-managed",
+never "unkillable", for exactly the cautious-user audience.
+
+**Daemon lifecycle (ssh-agent-shaped, now concrete):**
+
+- **Socket keyed by resolved sandbox roots + a session discriminator**
+  (decided: parity-via-discriminator, NOT one shared daemon per root —
+  per-root sharing would give concurrent agent sessions one shared
+  `Session` (cursor, registers, undo), silently breaking the
+  exact-MCP-parity argument that justified the daemon design).
+  Discriminator via `DJINNVIM_SESSION` env (set by the skill),
+  defaulting to something session-stable like the parent shell PID.
+  Socket lives under `$XDG_RUNTIME_DIR/djinnvim/`.
+- **Auto-spawn:** client computes socket path → connect; on failure
+  (no socket / stale socket refusing) it re-execs its own binary as a
+  detached daemon, polls until the socket accepts, proceeds. Stale
+  sockets unlinked; concurrent-spawn races resolved by bind
+  exclusivity (loser exits, client retries connect).
+- **Idle self-exit** (~30 min, exact value open): unwritten buffers
+  die with the daemon — stateless by design, matching MCP-server-exit
+  semantics. The failure is loud, not silent: the next command spawns
+  a fresh empty `Session` and gets "no active buffer" instead of
+  operating on ghost state.
+- **Version handshake on every request:** a daemon running a stale
+  binary (pipx upgrade under a live daemon) replies "restarting" and
+  exits; the client respawns the new version. No skew.
+
+**Publish timing (user decision 2026-07-25): full story in one shot.**
+No MCP-only early publish — the first PyPI release ships MCP + CLI +
+skill together. Rationale: the launch announcement (Reddit etc.) is a
+one-shot; it must include the CLI angle, since many devs prefer the
+CLI over MCP config. Name reservation is not worth splitting the
+story.
+
+**Open, to settle when building:** exact idle timeout; the socket
+protocol (MCP framing vs minimal
+JSON-RPC — still open from "Interfaces"); `install-skill` target
+(`~/.claude/skills` vs project `.claude/skills`, or both via flag);
+argument quoting ergonomics for the CLI verbs (agents will pass
+`at /pat/ ciw x` through a shell).
+
+**Build order (agreed 2026-07-25, next session):** (1) subcommand
+restructure (`djinnvim mcp`, old entry point kept working until
+configs/runner flip); (2) daemon + thin client (socket derivation,
+auto-spawn, idle exit, version handshake, `status`/`shutdown` —
+protocol question settled here); (3) CLI verbs (thin `Session`
+mapping + quoting check); (4) CLI dogfood *before* the skill exists,
+to learn what SKILL.md must say; (5) SKILL.md + `install-skill`;
+(6) packaging + trusted-publishing CI; then the one-shot release.
