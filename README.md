@@ -6,9 +6,9 @@
 
 **Vim for AI agents: keyhole editing with vim's vocabulary and ed's discipline.**
 
-djinnvim is an MCP server that lets an agent edit files *without ever reading them whole*. The agent navigates by pattern, edits with vim's compact command vocabulary, and after every single action gets back a small viewport of the buffer — the tool result *is* the screen. Nothing touches disk until an explicit `write`.
+djinnvim is an MCP server and CLI that lets an agent edit files *without ever reading them whole*. The agent navigates by pattern, edits with vim's compact command vocabulary, and after every single action gets back a small viewport of the buffer — the tool result *is* the screen. Nothing touches disk until an explicit `write`.
 
-> ⚠️ **Status:** working prototype, benchmarked (data below), interface still being polished. Usage documentation will follow once the MCP surface and a CLI companion are settled.
+> ⚠️ **Status: early.** The interaction model is benchmarked (data below) and the full surface — MCP server, CLI, and agent skill — is built and tested. But real-world adoption is essentially zero so far: Claude Code is the only MCP client this has been tested against, and surfaces may still change before 1.0. If you try it, feedback is genuinely wanted — reports from other MCP clients doubly so.
 
 ## The idea
 
@@ -31,14 +31,56 @@ So a vim translated to the AI's way of seeing keeps vim's *vocabulary* — text 
 
 One consequence: djinnvim allows **declarative** big shots (a single complex regex substitution over the whole file — one pattern, one transformation, no intermediate state) but rejects **imperative** ones (keystroke sequences and macros, where the model must blindly simulate buffer state between commands). The benchmark below measures exactly why: big blind shots are where silent errors live.
 
-## Where it fits
+## Who is this for
 
-Two audiences, two arguments — both measured below:
+- **Anyone paying for agents that edit big files.** Keyhole editing cost is driven by the *edit*, not the *file*: in our sweep, cost per task stays flat from 500 to 10 000 lines while every read-the-file approach grows with size.
+- **People who run agents locked down.** A stock agent's editing power comes largely from Bash (`grep` + `sed`) — exactly the permission a cautious user denies, since it is arbitrary command execution. Denying Bash today means losing pattern search and bulk search-replace entirely. djinnvim gives that capability class back through a narrowly scoped tool set with a containment story `sed -i` can't offer: root-sandboxed paths, an in-memory buffer as a review point before `write`, undo, and per-tool permission granularity (a client can allow read-only exploration while gating writes). Honest scope: this compensates for the *editing and search* disadvantage of denying shell access, not the whole disadvantage — a Bash-less agent still can't run tests or git. Both halves of this claim are measured below (finding 3).
+- **Early adopters who don't take benchmark tables on faith.** The whole harness ships in [`benchmark/`](benchmark/) — generators, runner, report script. Every task is generated together with its exact target file, so you can re-run any cell (or invent your own) and grade it with a mechanical diff on your own API budget.
+- **Vim people who are curious.** The command surface really is vim — `ciw`, `dap`, `cs"'`, `:%s//g` — and the CLI is usable by hand. One honest caveat before you fall in love: this is vim's *vocabulary* under ed's *feedback loop* (one command per call, a 5-line echo instead of a live screen — the section above explains why). For a human with a free screen, real vim remains strictly more fun.
 
-1. **Token economy.** Keyhole editing cost is driven by the *edit*, not the *file*: in our sweep, cost per task stays flat from 500 to 10 000 lines while every read-the-file approach grows with size.
-2. **Locked-down agents.** A stock agent's editing power comes largely from Bash (`grep` + `sed`) — exactly the permission a cautious user denies, since it is arbitrary command execution. Denying Bash today means losing pattern search and bulk search-replace entirely. djinnvim gives that capability class back through a narrowly scoped tool set with a containment story `sed -i` can't offer: root-sandboxed paths, an in-memory buffer as a review point before `write`, undo, and per-tool permission granularity (a client can allow read-only exploration while gating writes).
+## Getting started
 
-Honest scope: this compensates for the *editing and search* disadvantage of denying shell access, not the whole disadvantage — a Bash-less agent still can't run tests or git.
+Installs straight from the repo (no PyPI package for now). Requires Python ≥ 3.11.
+
+### As an MCP server
+
+Zero-install via [uv](https://docs.astral.sh/uv/): point your MCP client at `uvx`. For Claude Code:
+
+```bash
+claude mcp add djinnvim -- uvx --from git+https://github.com/anschnapp/djinnvim djinnvim mcp
+```
+
+or in `.mcp.json` / any MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "djinnvim": {
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/anschnapp/djinnvim", "djinnvim", "mcp"]
+    }
+  }
+}
+```
+
+That's the whole setup — the tool descriptions carry the agent from there (that claim is what the benchmark's cold sessions measure). By default the sandbox follows the client's root grants; set `DJINNVIM_ROOTS` in the server env to pin it instead (see Sandboxing).
+
+### As a CLI + agent skill
+
+For agents that talk through a shell instead of MCP (and for humans), install the binary durably on PATH via [pipx](https://pipx.pypa.io/):
+
+```bash
+pipx install git+https://github.com/anschnapp/djinnvim
+djinnvim install-skill        # writes the agent skill to ~/.claude/skills (--project for ./.claude/skills)
+```
+
+The CLI mirrors the six MCP tools as verbs (`djinnvim open`, `motion`, `edit`, `substitute`, `matches`, `write`), backed by an auto-spawned per-session daemon that holds the buffer state between calls — `djinnvim status` shows it, `djinnvim shutdown` kills it. Pass each editor command as one quoted argument:
+
+```bash
+djinnvim open pipeline.py
+djinnvim edit 'at /retries=3/ ciw 5'
+djinnvim write
+```
 
 ## The benchmark
 
@@ -216,7 +258,7 @@ xychart-beta
 
 *Series, top to bottom at 10 000 lines: **no-bash**, **baseline**, **keyhole**.*
 
-**🔍 [Interactive cost explorer](docs/cost-explorer.html)** — switch model, drill into single tasks (with per-trial dots), hover for trial-level costs, expand a data table. GitHub strips scripts from READMEs, so it can't render inline: open the file locally in a browser, or serve it via GitHub Pages (`Settings → Pages → main /docs`) and link it from here.
+**🔍 [Interactive cost explorer](https://anschnapp.github.io/djinnvim/cost-explorer.html)** — switch model, drill into single tasks (with per-trial dots), hover for trial-level costs, expand a data table. (Self-contained page served via GitHub Pages; also works by opening [`docs/cost-explorer.html`](docs/cost-explorer.html) locally in a browser.)
 
 Keyhole is flat (~$0.33 Sonnet, ~$0.11 Haiku, regardless of size) because it never pays for the file, only for the edit. Every read-the-file condition grows with size. Honest caveat: at 500 lines the full baseline is *cheaper* than keyhole — the win is the flat curve and the lockdown story, not small-file economy.
 
@@ -292,9 +334,9 @@ Two honest caveats. The sandbox confines the *agent* (model-generated paths, pro
 
 ## Roadmap
 
-- Polish the MCP tool surface (descriptions, error signposting)
-- A CLI companion for human use and scripting
-- Usage & setup documentation (deliberately postponed until the above settle)
+- **Wider client testing** — Claude Code is the only MCP client exercised so far; `roots/list` handling and tool-description ergonomics need eyes from other clients
+- **Multi-file `matches`** — cross-file search visibility, the missing primitive before any multi-file editing story
+- **PyPI release** — deferred for now; the git-URL installs above are the supported channel (publishing CI is already wired for when it's wanted)
 
 ---
 

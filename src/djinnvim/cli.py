@@ -165,7 +165,7 @@ def build_parser() -> argparse.ArgumentParser:
     for op, doc in (
         ("motion", "move the cursor: '/pattern', ':80', 'n', 'gg', 'G', 'fx'"),
         ("edit", "vim normal-mode edit: 'at /pattern/ ciw new', 'dd', 'u'"),
-        ("substitute", "ex command: ':%s/old/new/g', ':g/pat/d'"),
+        ("substitute", "ex command: ':%%s/old/new/g', ':g/pat/d'"),
     ):
         sp = sub.add_parser(op, help=doc)
         sp.add_argument(

@@ -1721,3 +1721,31 @@ look-at-a-call-site need; no `viewport` tool wanted.
 
 **Remaining before release:** add LICENSE (Apache 2.0, user's GitHub
 flow), configure the PyPI trusted publisher, then tag `v0.1.0`.
+
+## Going public: README polish + PyPI deferral (2026-07-25, later session)
+
+**README polish landed** (the agreed 5-point plan): honest early-phase
+status note (benchmarked, full surface built, ~zero real-world adoption,
+only Claude Code tested as client, feedback wanted); "Where it fits"
+merged into "Who is this for" (token economy, lockdown, run-your-own-
+benchmarks via `benchmark/`, vim-curious with the ed-feedback caveat);
+new "Getting started" section (git-URL installs: `claude mcp add … uvx
+--from git+…` / `.mcp.json` snippet for MCP, `pipx install git+…` +
+`install-skill` for CLI, quoting rule shown); cost-explorer link now
+points at the GitHub Pages URL; roadmap refreshed (wider client
+testing, multi-file matches, PyPI deferred). URLs assume
+**`anschnapp/djinnvim`** — repo not created at edit time (no git
+remote); user creates it themselves, then enables Pages (main /docs).
+
+**PyPI release deferred (user decision, this session)** — revises the
+2026-07-25 "full story in one shot on PyPI" decision: the git-URL
+installs are the supported channel for now; no trusted-publisher
+config, no `v0.1.0` tag needed yet. `publish.yml` stays wired and
+dormant. Known accepted risk, flagged at decision time: the `djinnvim`
+name stays unreserved on PyPI (a squatter would poison a later
+`pipx install djinnvim`); publishing once would lock it.
+
+Also fixed this session: argparse `%`-interpolation bug in `cli.py`
+(the `substitute` subcommand help contained a bare `:%s/…`, which
+argparse expanded into a parser-internals dict in `--help`; escaped
+to `%%s`).
