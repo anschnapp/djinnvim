@@ -61,8 +61,11 @@ die with it; only `write` touches disk). Exit codes: 1 = the editor said
 
 ## edit
 
-Anchored form (preferred): `at /pattern/ <cmd>` (ordinal: `at 2nd /pat/
-<cmd>`). **The anchor lands at the START of the match — anchor on the
+Anchored form (preferred): `at /pattern/ <cmd>` (regex) or
+`at "literal text" <cmd>` (matched literally — no escaping, use it when
+the anchor has parens, dots or other regex punctuation; it cannot contain
+a double quote). Ordinal and offset work on both: `at 2nd /pat/ <cmd>`.
+**The anchor lands at the START of the match — anchor on the
 exact text to change:** `at /15\)/ ciw 60` changes the 15 in
 `retries(15)`; `at /retries=15/ ciw 60` would change `retries`.
 A `+N`/`-N` after the closing slash moves the anchor N whole lines
@@ -81,10 +84,14 @@ delete), `cip`/`cap`/`dip`/`dap` (paragraph), `dd`, `cc TEXT`, `D`,
 `C TEXT`, `x`, `r<char>`, `o`/`O TEXT` (line below/above; multi-line OK),
 `A`/`I TEXT` (line end/start), `i`/`a TEXT` (before/after the cursor
 char), `cs"'` / `ds"` / `ysiw"` (surround). Changes need TEXT, deletes
-take none; everything after the first space is TEXT, verbatim — every
-`\n` in it is literal, one Enter each (`o body\n` leaves one blank line
-below "body"). `o`/`O` are line-wise — to insert below a multi-line
-statement, anchor on its LAST line, not its first.
+take none; everything after the first space is TEXT, verbatim. Newlines
+in TEXT must be **real newline characters** (one Enter each, vim-exact) —
+the two characters backslash-n are not translated, they stay as typed, so
+source like `print("a\nb")` inserts correctly. (This is the opposite of
+`substitute`, where `\n` in the *replacement* does produce a newline.) `o`/`O` are line-wise — to
+insert below a multi-line statement, anchor on its LAST line, not its
+first. `dd` deletes the cursor line; address it by pattern
+(`at /pattern/ dd`) — `edit` takes no ex addresses.
 
 `o`/`O` inherit the current line's indentation by default (vim
 autoindent): TEXT's own leading whitespace stacks on top, so
@@ -93,6 +100,12 @@ insert TEXT literally, no inherited indent. Both echo pre-edit blank-line
 counts next to where they landed (`2 blank line(s) above insertion
 point, 0 below`) — read it to match a file's blank-line convention (e.g.
 2 lines between top-level defs) without counting from the viewport.
+
+Blank lines are ordinary edits, one call each: bare `o`/`O` with no TEXT
+inserts exactly one empty line, and `at /pattern/ dd` on a blank line
+removes one. Don't reach for `substitute` (`:/pat/s/^/\n/`, `:N,Nd`) to
+fix spacing — take the counts from the `o`/`O` echo and correct with a
+single anchored call.
 
 Registers: `yy` / `y<i|a><obj>` yank, `p`/`P` paste. `"name` prefix
 composes with the anchor: `at /def helper/ "fn dap` cuts the function,

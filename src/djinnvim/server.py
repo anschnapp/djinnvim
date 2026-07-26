@@ -101,8 +101,11 @@ async def motion(command: str, ctx: Context | None = None) -> str:
 
 @mcp.tool(structured_output=False)
 async def edit(command: str, ctx: Context | None = None) -> str:
-    """Edit at the cursor, or anchored: `at /pattern/ <cmd>` (ordinal:
-    `at 2nd /pattern/ <cmd>`). The anchor lands at the START of the match —
+    """Edit at the cursor, or anchored: `at /pattern/ <cmd>` (regex) or
+    `at "literal text" <cmd>` (matched literally, no escaping — use it when
+    the anchor contains parens, dots or other regex punctuation; it cannot
+    contain a double quote). Ordinal and offset work on both:
+    `at 2nd /pattern/ <cmd>`. The anchor lands at the START of the match —
     anchor on the exact text to change: `at /15\\)/ ciw 60` changes the 15
     in `retries(15)`; `at /retries=15/ ciw 60` would change `retries`.
     <cmd> is an edit command, never a motion. A `+N`/`-N` after the closing
@@ -125,10 +128,15 @@ async def edit(command: str, ctx: Context | None = None) -> str:
     end/start), i/a TEXT (insert before / append after the cursor char —
     anchored, `a` lands after the match's FIRST char), cs<old><new>
     (cs"' turns "x" into 'x'), ds<char>, ysiw<char>. Changes need TEXT,
-    deletes take none; everything after the first space is TEXT, verbatim —
-    every `\\n` in it is literal (one Enter each, vim-exact): `o body\\n`
-    leaves one blank line below "body". o/O are line-wise — to insert below
-    a multi-line statement, anchor on its LAST line.
+    deletes take none; everything after the first space is TEXT, verbatim.
+    Newlines in TEXT must be real newline characters, one Enter each
+    (vim-exact) — the two characters backslash-n are NOT translated, they
+    stay as typed (so source like print("a\\nb") inserts correctly; this is
+    the opposite of substitute, where \\n in the REPLACEMENT does produce a
+    newline). o/O are
+    line-wise — to insert below a multi-line statement, anchor on its LAST
+    line. `dd` deletes the cursor line; address it by pattern
+    (`at /pattern/ dd`) — edit takes no ex addresses.
 
     o/O inherit the current line's indentation by default (vim autoindent):
     TEXT's own leading whitespace is added on top, so `o  x = 1` after a
@@ -136,7 +144,10 @@ async def edit(command: str, ctx: Context | None = None) -> str:
     literally. Both echo pre-edit blank-line counts adjacent to where they
     landed (`2 blank line(s) above insertion point, 0 below`) so blank-line
     convention (e.g. 2 lines between top-level defs) can be matched without
-    counting from the viewport.
+    counting from the viewport. Blank lines are edits like any other: bare
+    `o`/`O` with no TEXT inserts exactly one empty line, and `dd` anchored
+    on a blank line removes one — read the counts from the echo instead of
+    guessing, and fix spacing with one call rather than a substitute.
 
     Registers: yy / y<i|a><obj> yank, p/P paste below/above the cursor line
     (charwise: within it). `"name` prefix composes with the anchor:
@@ -150,6 +161,7 @@ async def edit(command: str, ctx: Context | None = None) -> str:
 
     Examples:
       edit("at /old_name/ ciw new_name")
+      edit("at \\"# merge (skip blocks)\\" O")   # literal anchor, one blank line above
       edit("at each /log_debug\\(/ dd")
       edit("at each /# obsolete/ dap")
       edit("at /def helper/ \\"fn dap")   then   edit("\\"fn p")

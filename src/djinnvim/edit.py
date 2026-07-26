@@ -1,6 +1,9 @@
 """Edit command parsing and execution — v0.1 subset + v0.3 registers.
 
 Anchored form (preferred): `at /pattern/ <command>` — search, then apply.
+Literal form (v0.17): `at "literal text" <command>` — the text is escaped,
+so regex punctuation in a unique line needs no backslashes; it cannot
+contain a double quote (use the /regex/ form there).
 Optional ordinal: `at 2nd /pattern/ <command>` (2nd match after cursor).
 Optional line offset (v0.14, mirrors substitute's address offsets):
 `at /pattern/-1 <command>` — the cursor lands N lines above/below the
@@ -44,8 +47,16 @@ class EditError(Exception):
     """Loud, specific failure (e.g. 'no enclosing ( on line 80')."""
 
 
-_ANCHOR = re.compile(r"^at\s+(?:(\d+)(?:st|nd|rd|th)\s+)?/((?:\\.|[^/])*)/([+-]\d+)?\s*")
-_EACH = re.compile(r"^at\s+each\s+/((?:\\.|[^/])*)/\s*")
+_ANCHOR = re.compile(
+    r"^at\s+(?:(\d+)(?:st|nd|rd|th)\s+)?"
+    r'(?:/((?:\\.|[^/])*)/|"([^"]*)")([+-]\d+)?\s*'
+)
+_EACH = re.compile(r'^at\s+each\s+(?:/((?:\\.|[^/])*)/|"([^"]*)")\s*')
+_AT_PREFIX = re.compile(r"^at\s")
+# an ex address reflex reaching `edit` (`:901 dd`, `1,5d`, `%s/…`)
+# (a digit glued to letters is a count reflex like `5dd`, not an address —
+# that keeps falling through to the supported-command list)
+_EX_ADDRESS = re.compile(r"^[:%$]|^\d+\s*[,\s]")
 _OBJECT_CMD = re.compile(r"^([cd])([ia])([wWp(){}\[\]\"'`])(?:\s(.*))?$", re.DOTALL)
 _INSERT_CMD = re.compile(r"^(cc|C|o!|O!|o|O|A|I|i|a)(?:\s(.*))?$", re.DOTALL)
 _CS_CMD = re.compile(r"^cs(.)(.)$")
@@ -89,8 +100,9 @@ def execute(
     if m:
         if reg_name is not None:
             raise EditError('"name registers do not compose with at each')
+        pattern, shown, display = _anchor_pattern(m.group(1), m.group(2))
         try:
-            summary, changed = _each(buf, m.group(1), command[m.end():])
+            summary, changed = _each(buf, pattern, command[m.end():], shown, display)
         except EditError:
             buf.cursor.line, buf.cursor.col = saved
             raise
@@ -103,8 +115,8 @@ def execute(
     m = _ANCHOR.match(command)
     if m:
         ordinal = int(m.group(1) or 1)
-        pattern = m.group(2)
-        offset = int(m.group(3) or 0)
+        pattern, shown, _display = _anchor_pattern(m.group(2), m.group(3))
+        offset = int(m.group(4) or 0)
         rest = command[m.end():]
         if not rest:
             raise EditError("anchored form needs a command: at /pattern/ <cmd>")
@@ -113,7 +125,7 @@ def execute(
         except motion.MotionError as e:
             raise EditError(str(e)) from None
         if not hits:
-            raise EditError(f"no match: {pattern}")
+            raise EditError(f"no match: {shown}")
         if ordinal > len(hits):
             raise EditError(f"asked for match {ordinal} but only {len(hits)} match(es)")
         # Nth match strictly after the cursor, wrapping like search.
@@ -127,7 +139,7 @@ def execute(
             target = line + offset
             if not 0 <= target < len(buf.lines):
                 raise EditError(
-                    f"offset {m.group(3)} from the match on line {line + 1} "
+                    f"offset {m.group(4)} from the match on line {line + 1} "
                     f"lands outside the file (1–{len(buf.lines)})"
                 )
             line, col = target, 0
@@ -135,9 +147,16 @@ def execute(
         anchor_note = f" (match {chosen + 1} of {len(hits)})"
         if offset:
             anchor_note = (
-                f" (match {chosen + 1} of {len(hits)}, offset {m.group(3)})"
+                f" (match {chosen + 1} of {len(hits)}, offset {m.group(4)})"
             )
         command = rest
+    elif _AT_PREFIX.match(command):
+        raise EditError(
+            "malformed anchor: use at /regex/ <cmd>, at \"literal text\" <cmd>, "
+            'at 2nd /regex/ <cmd>, at /regex/-1 <cmd>, or at each /regex/ <cmd> '
+            "(a literal anchor cannot contain a double quote — use the "
+            "/regex/ form for that)"
+        )
 
     if reg_name is None:
         reg_name, command = _split_register(command)
@@ -200,6 +219,17 @@ def _restored_span(before: list[str], after: list[str]) -> tuple[int, int]:
     return min(lo, last_idx), min(max(hi_a, lo), last_idx)
 
 
+def _anchor_pattern(rx: str | None, literal: str | None) -> tuple[str, str, str]:
+    """Resolve an anchor written as /regex/ or "literal text" (v0.17) into
+    (regex, as-typed, delimited-for-messages). The literal form escapes the
+    text, so parens, dots and quotes in a unique line need no escaping."""
+    if literal is not None:
+        if not literal:
+            raise EditError('empty literal anchor: use at "some text" <cmd>')
+        return re.escape(literal), literal, f'"{literal}"'
+    return rx or "", rx or "", f"/{rx}/"
+
+
 def _split_register(command: str) -> tuple[str | None, str]:
     if not command.startswith('"'):
         return None, command
@@ -212,7 +242,8 @@ def _split_register(command: str) -> tuple[str | None, str]:
 
 
 def _each(
-    buf: Buffer, pattern: str, cmd: str
+    buf: Buffer, pattern: str, cmd: str, shown: str | None = None,
+    display: str | None = None,
 ) -> tuple[str, list[tuple[int, str | None, str | None]]]:
     """at each /pattern/ <cmd>: one edit command at EVERY match. Per match
     (column-precise), not per-line like vim's :g. Bottom-up so earlier
@@ -223,6 +254,10 @@ def _each(
     spans, never difflib — repeated lines must not misalign the echo."""
     if not cmd:
         raise EditError("at each needs a command: at each /pattern/ <cmd>")
+    if shown is None:
+        shown = pattern
+    if display is None:
+        display = f"/{pattern}/"
     bare = cmd.strip()
     if (
         bare == "u"
@@ -239,7 +274,7 @@ def _each(
     except motion.MotionError as e:
         raise EditError(str(e)) from None
     if not hits:
-        raise EditError(f"no match: {pattern}")
+        raise EditError(f"no match: {shown}")
     rx = re.compile(pattern)  # find_matches already validated it
 
     pre_lines = list(buf.lines)
@@ -255,7 +290,7 @@ def _each(
         except EditError as e:
             buf.lines = pre_lines  # transactional: all or nothing
             raise EditError(
-                f"at each /{pattern}/ failed at the match on line "
+                f"at each {display} failed at the match on line "
                 f"{line_i + 1}: {e} — no changes applied"
             ) from None
         # bottom-up keeps every earlier site's numbering pre-edit exact,
@@ -592,6 +627,15 @@ def _apply(buf: Buffer, cmd: str) -> tuple[str, int, int]:
         buf.cursor.col = start
         return f"surrounded word with {new} on line {i + 1}", i, i
 
+    if _EX_ADDRESS.match(bare):
+        # dogfood #9: an ex address reflex (`:901 dd`) dead-ended in the
+        # supported-command list; name the pattern-addressed form instead,
+        # since going numeric is exactly what goes stale after every edit.
+        raise EditError(
+            f"edit takes no ex addresses: {cmd!r} — address by pattern instead "
+            '(at /regex/ dd, at "literal text" dd, at each /regex/ dd), '
+            "or use the substitute tool for ex commands (:901,901d)"
+        )
     raise EditError(
         f"unknown edit command: {cmd!r} "
         "(supported: ciw/caw ci(/{{/[/\"/' di/da-variants cip/dap dd cc D C x r "

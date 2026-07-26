@@ -530,6 +530,63 @@ def test_anchor_without_offset_keeps_match_column():
     assert "offset" not in summary
 
 
+# --- literal anchors (v0.17) ---
+
+def test_literal_anchor_needs_no_escaping():
+    buf = make(["x = 1", "# merge (skip blocks...)", "y = 2"])
+    summary, _, _ = execute(buf, 'at "# merge (skip blocks...)" O above')
+    assert buf.lines == ["x = 1", "above", "# merge (skip blocks...)", "y = 2"]
+    assert "match 1 of 1" in summary
+
+
+def test_literal_anchor_does_not_match_as_regex():
+    # the regex form would match "aXb"; the literal form must not
+    buf = make(["aXb = 1", "a.b = 2"])
+    execute(buf, 'at "a.b" cc z')
+    assert buf.lines == ["aXb = 1", "z"]
+
+
+def test_literal_anchor_composes_with_ordinal_and_offset():
+    buf = make(["start", "f(x)", "pad", "f(x)", "target"])
+    summary, _, _ = execute(buf, 'at 2nd "f(x)"+1 cc done')
+    assert buf.lines == ["start", "f(x)", "pad", "f(x)", "done"]
+    assert "match 2 of 2, offset +1" in summary
+
+
+def test_literal_anchor_no_match_shows_the_text_as_typed():
+    buf = make(["one"])
+    with pytest.raises(EditError, match=r"no match: a\(b\)"):
+        execute(buf, 'at "a(b)" dd')
+    assert buf.lines == ["one"]
+
+
+def test_at_each_literal_anchor():
+    buf = make(["v(1) = 1", "other", "v(1) = 2"])
+    summary, _, _ = execute(buf, 'at each "v(1)" dd')
+    assert buf.lines == ["other"]
+    assert "2" in summary
+
+
+def test_empty_literal_anchor_is_loud():
+    buf = make(["one"])
+    with pytest.raises(EditError, match="empty literal anchor"):
+        execute(buf, 'at "" dd')
+
+
+def test_unterminated_literal_anchor_is_loud():
+    buf = make(["one"])
+    with pytest.raises(EditError, match="malformed anchor"):
+        execute(buf, 'at "no closing quote dd')
+    assert buf.lines == ["one"]
+
+
+def test_ex_address_in_edit_signposts_the_anchored_form():
+    buf = make(["one", "two"])
+    with pytest.raises(EditError, match="address by pattern instead"):
+        execute(buf, ":2 dd")
+    assert buf.lines == ["one", "two"]
+
+
 # --- parse errors ---
 
 def test_change_without_text_is_loud():

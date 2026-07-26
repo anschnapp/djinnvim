@@ -545,7 +545,10 @@ src/djinnvim/
                     (before/after cursor char, anchored = at the match);
                     v0.8: `at each /pat/ <cmd>` global form (per-match,
                     bottom-up + revalidation, transactional, diff echo,
-                    one undo step; y/p/u/registers rejected)
+                    one undo step; y/p/u/registers rejected);
+                    v0.17: literal anchors `at "text" <cmd>` (escaped,
+                    composes with ordinal/offset/at-each), malformed-
+                    anchor + ex-address signpost errors
   registers.py   ✅ Register dataclass (lines + linewise kind), shared
                     preview/clip/display/missing-register helpers for both
                     surfaces
@@ -584,7 +587,7 @@ src/djinnvim/
                     v0.11: async tools with injected Context — lazy client
                     roots/list fetch, list_changed → stale-flag refetch,
                     env roots pinned/exclusive
-tests/           ✅ 364 tests (motion, edit, substitute, print, registers, undo,
+tests/           ✅ 372 tests (motion, edit, substitute, print, registers, undo,
                     address offsets, i/a inserts, replacement unescaping,
                     at-each global edits, server round-trips, viewport
                     format + caret labels, benchmark gen/report; v0.9:
@@ -961,7 +964,7 @@ Supported motions:
 ### `edit`
 Perform an editing command at the current cursor position, or at a pattern anchor in the same call.
 
-**Anchored form (preferred):** `at /pattern/ <command>` — moves to first match after cursor, then applies the command. Optional ordinal: `at 2nd /pattern/ <command>`. This keeps navigate+edit in one call for the common case.
+**Anchored form (preferred):** `at /pattern/ <command>` — moves to first match after cursor, then applies the command. Optional ordinal: `at 2nd /pattern/ <command>`. This keeps navigate+edit in one call for the common case. **Literal form (v0.17):** `at "literal text" <command>` — the text is escaped, so an anchor full of regex punctuation needs no backslashes; ordinals, `+N`/`-N` offsets and `at each` all compose with it.
 
 **Global form (v0.8):** `at each /pattern/ <command>` — applies one edit command at *every* match (per match, column-precise; bottom-up; transactional; one undo step). Echoes a substitute-style compact diff instead of a viewport. `y`/`p`/`u` and register prefixes are not allowed here.
 
@@ -2043,6 +2046,106 @@ blank-run notes on both `o` and `O`; caret indentation fact — matches,
 deeper, singular-unit "1 space", tabs-vs-spaces, first-line-omitted); 3
 pre-existing trailing-newline tests updated to the new literal semantics
 (`o added\n` now leaves a trailing blank, `o added\n\n` leaves two).
+
+## Dogfood #9 findings (2026-07-26, fourth external real-project session)
+
+Same real project, Opus 5 over MCP, post-v0.16. Result net positive and
+better than #8: pattern anchors survived a 184-line mid-file insertion
+(the agent's own note: a line-based tool would have forced two re-reads),
+the 184-line module went in as ONE `O!` with exact literal whitespace, the
+viewport echo caught a missing blank line before it reached disk, `u`
+cleaned up a mistake with no residue, and `main.py` (~1200 lines) was never
+re-read after the initial `Read` — small `print` windows around anchors
+were enough. That last point closes dogfood #8's parked item 4: `print`
+did the job it was built for.
+
+Friction, triaged against the code before designing anything. **Three of
+the six reported items were not gaps:**
+
+1. **The `\n` burn is our wording, and the real trap is an asymmetry.**
+   The agent read "every `\n` in TEXT is literal (one Enter each,
+   vim-exact)" as "becomes a newline" and sent the two characters
+   backslash-n, which landed as content. Cost one `u` plus a retry.
+   Translating backslash-n in TEXT is a non-starter (it would corrupt
+   every `print("a\nb")` an agent inserts), so this is description
+   territory — but the sharp edge is that `substitute`'s *replacement*
+   DOES turn `\n` into a newline (verified live: `:s/a = 1/x\ny/` splits
+   the line). Same two characters, opposite meaning in two tools. The fix
+   states the asymmetry explicitly in both descriptions and SKILL.md
+   rather than just re-wording "literal".
+2. **"No way to insert an empty line directly" is false.** Bare `o`/`O`
+   with no TEXT inserts exactly one empty line and composes with anchors
+   (`at /pat/ O`), which is why the agent's `:/pat/s/^/\n/` workaround and
+   five `:N,Nd` cleanup calls were never necessary. Pure discoverability:
+   the tool description never said so. **Blank-line handling stays
+   guidance-only (user decision):** a declarative `blanks N above|below`
+   command was designed in conversation and rejected for now — the
+   documented one-call idioms have never actually been tried, so building
+   a new surface would be guessing at a tax that plain guidance may
+   remove. If dogfood #10 still burns calls on whitespace with the
+   guidance in place, the evidence gate is met and `blanks` is the
+   candidate.
+3. **"`edit(':901 dd')` is rejected, so line deletion forces numeric
+   addresses" is also false** — `at /pattern/ dd` is exactly the
+   pattern-addressed line delete. But the error dead-ended in the
+   supported-command list without naming it, so the ex-address reflex had
+   nowhere to go. Fixed as a signpost, same shape as `.` and
+   `:g//normal`.
+4. **Regex escaping in anchors — second live hit** (dogfood #7 item 4 was
+   the first), and this time the workaround was worse than the papercut:
+   the agent dodged `# merge (skip blocks…)` with a `.` wildcard, which
+   is fine until a wildcard silently matches a site it did not intend.
+   That is the silent-wrong-site failure mode the whole design exists to
+   remove, so the evidence gate is met — see v0.17.
+5. **Hand-indented edits inside wrapped expressions** — the v0.14
+   indent-capture recipe covers it and the agent did not use it;
+   guidance, not a gap. Not re-actioned this session.
+6. **No parse/LSP feedback** ("an edit that leaves the file unparseable
+   would sail through silently"). Real, and **deliberately skipped (user
+   decision)**: a Python-only `compile()` note on `write` was on the
+   table and rejected as the first step onto the LSP slope. Correctness
+   keeps coming from running the file or tests, per SKILL.md workflow
+   rule 6, which already says write-before-testing.
+
+## v0.17 (decided and implemented 2026-07-26, same session)
+
+**The literal anchor: `at "literal text" <cmd>`.** Quotes mean literal,
+slashes stay regex. Not a false friend — vim has no anchor syntax at all
+here (the `at` glue is already plain English per principle #1's
+corollary), and quoting-to-mean-literal is the reflex every shell and
+search box trains. The literal is `re.escape`d and reuses the identical
+anchor path, so ordinals and `+N`/`-N` offsets compose unchanged
+(`at 2nd "f(x)"+1 cc done`) and `at each "literal" <cmd>` works too.
+A literal cannot contain a double quote; that case says so and points at
+the `/regex/` form. Errors show the text as typed, never the escaped
+regex. Empty literals and unterminated quotes fail loudly: any command
+starting with `at ` that matches neither anchor form now gets a
+malformed-anchor error listing all the shapes, instead of falling through
+to the unknown-command list.
+
+**Ex-address signpost in `edit`:** a command starting with `:`/`%`/`$` or
+a line number followed by a separator (`:901 dd`, `1,5d`) now errors with
+"address by pattern instead (`at /regex/ dd`, `at "literal text" dd`,
+`at each /regex/ dd`), or use the substitute tool for ex commands". A
+digit glued to letters (`5dd`) is a *count* reflex, not an address, and
+still falls through to the supported-command list.
+
+**Guidance pass** (tool description + SKILL.md + module docstring): the
+literal-anchor form; the newline rule restated as "real newline
+characters, one Enter each; the two characters backslash-n stay as typed"
+plus the explicit `substitute`-replacement asymmetry; bare `o`/`O`
+inserts exactly one empty line and `at /pattern/ dd` removes one, with
+"don't reach for substitute to fix spacing"; `dd` addressed by pattern.
+
+372 tests (8 new: literal anchor needs no escaping, literal does not
+match as a regex, composes with ordinal+offset, no-match shows the text
+as typed, `at each` literal, empty literal loud, unterminated quote
+loud, ex-address signpost). New e2e (`e2e/e2e_literal_anchor.py`, real
+MCP stdio): the regex form misses `# merge (skip blocks...)` unescaped →
+the literal form hits it → `:9 dd` signposted → `at /^debug_line/ dd` →
+bare `O` adds the blank line → multi-line TEXT with real newlines and a
+surviving literal backslash-n → `at each "a + b"` → exact target match.
+All nine prior e2es re-run green.
 
 ## `print`: the reading keyhole (decided 2026-07-26, v0.16)
 
