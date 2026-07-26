@@ -1,6 +1,6 @@
 """Generate benchmark documents: a start file, its exact target file, and the
 task prompt. Generation and transformation come from the same seeded block
-list, so correctness is a mechanical diff (see design.md, Benchmark v1).
+list, so correctness is a mechanical diff (see decisions.md, "Benchmark v1 design").
 
 Usage (eyeballing): python benchmark/gen.py rename 500 --seed 1 --out /tmp/x
 """

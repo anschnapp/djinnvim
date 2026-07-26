@@ -1,7 +1,7 @@
 """Motion parsing and execution — v0.1 subset.
 
 Supported: /pattern  ?pattern  n  N  :N  gg  G  f{char}  F{char}
-Deferred (see design.md v0 scope): w b e 0 $ { } %
+Deferred (see design.md, motion tool): w b e 0 $ { } %
 
 Every motion either moves the cursor and returns a status line
 (e.g. "match 3 of 14") or raises MotionError without touching state.

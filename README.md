@@ -339,4 +339,4 @@ Two honest caveats. The sandbox confines the *agent* (model-generated paths, pro
 
 ---
 
-*This project is developed in collaboration with AI: design, implementation, and benchmark analysis are AI-assisted (Claude). Design decisions and full benchmark records live in [`design.md`](design.md).*
+*This project is developed in collaboration with AI: design, implementation, and benchmark analysis are AI-assisted (Claude). The design lives in [`design.md`](design.md); the decision log, dogfood sessions and full benchmark records live in [`decisions.md`](decisions.md).*
