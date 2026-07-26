@@ -1,7 +1,7 @@
 """Command-line entry point (subcommand surface, decided 2026-07-25).
 
-`djinnvim mcp` runs the stdio MCP server. The editing verbs mirror the six
-tool names (open, motion, edit, substitute, matches, write) and talk to a
+`djinnvim mcp` runs the stdio MCP server. The editing verbs mirror the seven
+tool names (open, motion, edit, substitute, print, matches, write) and talk to a
 per-session daemon holding the live Session (see daemon.py). `status` /
 `shutdown` make the daemon discoverable and killable — "hidden" means
 "auto-managed", never "unkillable". Bare `djinnvim` (no arguments) still
@@ -72,6 +72,15 @@ def _make_verb(op: str):
         return _request(op, {"command": command})
 
     return run
+
+
+def _run_print(args: argparse.Namespace) -> int:
+    if not args.command:
+        return _request("print", {"command": "p"})
+    command = _one_command("print", args.command)
+    if command is None:
+        return 2
+    return _request("print", {"command": command})
 
 
 def _run_matches(args: argparse.Namespace) -> int:
@@ -174,6 +183,17 @@ def build_parser() -> argparse.ArgumentParser:
             help="the whole command as ONE quoted argument",
         )
         sp.set_defaults(func=_make_verb(op))
+
+    sp = sub.add_parser(
+        "print",
+        help="read-only window print: 'p', ':80 p', ':/pat/ p around middle'",
+    )
+    sp.add_argument(
+        "command",
+        nargs="*",
+        help="the whole command as ONE quoted argument (default: 'p')",
+    )
+    sp.set_defaults(func=_run_print)
 
     sp = sub.add_parser("matches", help="grep-style listing of all matches")
     sp.add_argument("pattern")

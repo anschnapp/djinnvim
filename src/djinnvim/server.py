@@ -1,4 +1,4 @@
-"""MCP wiring for the tool surface: open, motion, edit, substitute,
+"""MCP wiring for the tool surface: open, motion, edit, substitute, print,
 matches, write. Thin wrapper — all logic lives in session.Session; this module
 owns only the MCP registration and the tool descriptions. Descriptions are
 written to carry a cold agent alone: compact, but every deviation from vim
@@ -76,7 +76,8 @@ async def open(path: str, ctx: Context | None = None) -> str:
     pattern with `motion`, not by reading. Then: `matches` to see all sites
     of a pattern, `edit` for vim normal-mode edits (text objects, whole
     blocks/paragraphs, registers, undo), `substitute` for ex-style regex
-    line edits. In every viewport the cursor line's `→ ` prefix is exactly
+    line edits, `print` to read a window of lines around a spot (ed/vim
+    `:p` — the reading tool). In every viewport the cursor line's `→ ` prefix is exactly
     as wide as other lines' two-space prefix — indentation shown is exact."""
     err = await _ensure_roots(ctx)
     return err if err else session.open(path)
@@ -194,6 +195,31 @@ async def substitute(command: str, ctx: Context | None = None) -> str:
     """
     err = await _ensure_roots(ctx)
     return err if err else session.substitute(command)
+
+
+@mcp.tool(name="print", structured_output=False)
+async def print_(command: str = "p", ctx: Context | None = None) -> str:
+    """Read-only print of a window of lines (ed/vim `:p`) — the reading
+    tool for understanding code around a spot; it never modifies anything.
+    Forms: `p` (current line, cursor unchanged), `:80 p` / `:/def load/ p`
+    (the cursor MOVES to the addressed line, then prints it), `:10,25 p`
+    (explicit range; cursor to its last line). Window words widen the view
+    around the cursor line: `p above tiny`, `p below middle`,
+    `p around long` — tiny=8, middle=25, long=50 lines (`above`/`below`
+    add that many on that side; `around` adds that many on EACH side); a
+    plain number also works (`p below 12`). Address and window combine:
+    `:/def load/ p around middle`. Addresses take +N/-N offsets. Output is
+    the numbered viewport (`→` marks the cursor); to page further, address
+    a line number from the gutter and print again. Max ~100 lines per call
+    — for whole-file overviews use `matches`, not repeated prints.
+
+    Examples:
+      print(":/def load_config/ p around middle")
+      print("p above tiny")
+      print(":120,140 p")
+    """
+    err = await _ensure_roots(ctx)
+    return err if err else session.print(command)
 
 
 @mcp.tool(structured_output=False)

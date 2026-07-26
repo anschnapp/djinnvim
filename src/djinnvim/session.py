@@ -1,4 +1,4 @@
-"""Interface-neutral session: the six keyhole operations as plain
+"""Interface-neutral session: the seven keyhole operations as plain
 string-in/string-out methods (errors included, as `error: ...` strings).
 
 Both the MCP server (server.py) and the future CLI are thin wrappers around
@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import edit as edit_mod
 from . import motion as motion_mod
+from . import printcmd as printcmd_mod
 from . import substitute as substitute_mod
 from .buffer import Buffer
 from .registers import Register
@@ -134,6 +135,16 @@ class Session:
             return substitute_mod.execute(buf, command, self.registers)
         except (edit_mod.EditError, substitute_mod.SubstituteError) as e:
             return f"error: {e}"
+
+    def print(self, command: str = "p") -> str:
+        buf = self.active
+        if buf is None:
+            return "error: no active buffer — call open(path) first"
+        try:
+            head, first, last = printcmd_mod.execute(buf, command)
+        except printcmd_mod.PrintError as e:
+            return f"error: {e}"
+        return head + "\n" + render(buf, first=first, last=last, context=0)
 
     def matches(self, pattern: str, context: int = 0) -> str:
         buf = self.active

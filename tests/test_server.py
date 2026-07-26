@@ -59,6 +59,15 @@ def test_motion_error_is_loud(sample):
     assert tool(server.motion("/zzz")) == "error: no match: zzz"
 
 
+def test_print_round_trip(sample):
+    tool(server.open("config.py"))
+    out = tool(server.print_(":3 p around 1"))
+    lines = out.splitlines()
+    assert lines[0] == "lines 2–4 of 5"
+    assert lines[2].startswith("→ 3")
+    assert tool(server.print_(":1,999 p")).startswith("error:")
+
+
 def test_edit_echoes_post_edit_viewport(sample):
     tool(server.open("config.py"))
     out = tool(server.edit("at /opts = /2nd ciw"))

@@ -42,7 +42,7 @@ from . import roots as roots_mod
 from .session import Session
 
 IDLE_DEFAULT = 1800.0
-SESSION_OPS = ("open", "motion", "edit", "substitute", "matches", "write")
+SESSION_OPS = ("open", "motion", "edit", "substitute", "print", "matches", "write")
 
 
 class DaemonError(Exception):

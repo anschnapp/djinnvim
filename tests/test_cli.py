@@ -52,6 +52,17 @@ def test_verbs_map_to_ops(calls, capsys):
     assert capsys.readouterr().out == "ok-result\n" * 6
 
 
+def test_print_verb(calls, capsys):
+    assert cli.main(["print"]) == 0  # bare: defaults to 'p'
+    assert cli.main(["print", ":80 p around middle"]) == 0
+    assert calls == [
+        ("print", {"command": "p"}),
+        ("print", {"command": ":80 p around middle"}),
+    ]
+    assert cli.main(["print", ":80", "p"]) == 2  # one-argument rule
+    assert "ONE shell argument" in capsys.readouterr().err
+
+
 def test_write_preview_flag(calls, capsys):
     assert cli.main(["write", "--preview"]) == 0
     assert calls == [("write", {"preview": True})]

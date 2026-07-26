@@ -34,7 +34,7 @@ calls via an auto-spawned per-session daemon — nothing to start or manage.
 die with it; only `write` touches disk). Exit codes: 1 = the editor said
 `error: ...` (read it — the buffer is untouched), 2 = usage/daemon problem.
 
-## The six verbs
+## The seven verbs
 
 - `djinnvim open PATH` — open/switch the active buffer. Relative paths
   resolve against the root, not your cwd.
@@ -48,6 +48,13 @@ die with it; only `write` touches disk). Exit codes: 1 = the editor said
   sites and decoys.
 - `djinnvim edit CMD` — vim normal-mode edit (details below).
 - `djinnvim substitute CMD` — ex command (details below).
+- `djinnvim print [CMD]` — read-only window print (ed/vim `:p`), the
+  reading tool: `'p'` (current line, cursor stays), `':80 p'` /
+  `':/def load/ p'` (cursor MOVES there, prints it), `':10,25 p'`
+  (range; cursor to its last line). Widen with `above`/`below`/`around`
+  + `tiny` (8) / `middle` (25) / `long` (50) or a number —
+  `':/def load/ p around middle'`; `around` counts EACH side. Max ~100
+  lines per call; page by re-addressing a gutter line number.
 - `djinnvim write` — save the active buffer; reports lines changed.
   `write --preview` shows the full pending buffer-vs-disk ±diff without
   writing — the final review before committing.

@@ -74,7 +74,7 @@ pipx install git+https://github.com/anschnapp/djinnvim
 djinnvim install-skill        # writes the agent skill to ~/.claude/skills (--project for ./.claude/skills)
 ```
 
-The CLI mirrors the six MCP tools as verbs (`djinnvim open`, `motion`, `edit`, `substitute`, `matches`, `write`), backed by an auto-spawned per-session daemon that holds the buffer state between calls - `djinnvim status` shows it, `djinnvim shutdown` kills it. Pass each editor command as one quoted argument:
+The CLI mirrors the seven MCP tools as verbs (`djinnvim open`, `motion`, `edit`, `substitute`, `print`, `matches`, `write`), backed by an auto-spawned per-session daemon that holds the buffer state between calls - `djinnvim status` shows it, `djinnvim shutdown` kills it. Pass each editor command as one quoted argument:
 
 ```bash
 djinnvim open pipeline.py
@@ -103,6 +103,8 @@ We benchmarked djinnvim against stock Claude Code with generated ground-truth ta
 **Grid:** 7 tasks × 3 file sizes (500 / 2 000 / 10 000 lines) × 2 models (Haiku 4.5, Sonnet 5) × 3 conditions × 3 trials. Every task is generated together with its exact target file, so **correctness is a mechanical diff, not a judge**. We report two columns: **exact** (byte-identical to target) and **semantic** (AST-equal - same program, formatting-only divergence tolerated).
 
 **Why no higher tier?** Opus-class models are unreasonably expensive for tasks of this shape - a full round costs a multiple of the entire remaining sweep, for edits a mid-tier model already handles. The Haiku → Sonnet trend (correctness gaps close while the cost curves keep their shape) suggests the pattern continues one tier up, but we have no measured data for that and don't claim it.
+
+**The numbers predate the current version.** The sweep ran before several later releases, so the measured trials never saw features and refinements added since - among them indentation-inheriting inserts, anchor offsets, write previews, and the `print` reading tool, most of them fixes for friction found in real sessions after the sweep. We strongly believe results today would be at least as good; that is a belief, not a measurement. A fresh round is real money and effort, so we hold it until enough changes or real-world usage have accumulated to make it worth spending - and contributions on the benchmarking side (running cells, new tasks, other models or clients) are very welcome.
 
 ### The tasks
 
@@ -333,6 +335,7 @@ Two honest caveats. The sandbox confines the *agent* (model-generated paths, pro
 - **Wider client testing** - Claude Code is the only MCP client exercised so far; `roots/list` handling and tool-description ergonomics need eyes from other clients
 - **Multi-file `matches`** - cross-file search visibility, the missing primitive before any multi-file editing story
 - **PyPI release** - deferred for now; the git-URL installs above are the supported channel (publishing CI is already wired for when it's wanted)
+- **Fresh benchmark round** - the published numbers predate the current version (see the note in the benchmark section); a re-run waits until enough changes or usage accumulate, and benchmarking contributions are welcome
 
 ---
 

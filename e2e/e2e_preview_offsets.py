@@ -51,7 +51,9 @@ async def main() -> None:
         # dogfood #7: landing ABOVE the banner took motion + motion + O.
         # The offset form is one call — anchor on the banner's unique line,
         # -1 puts the cursor on its top `# ---`, O inserts above the block.
-        out = await call("edit", command="at /# Merge logic/-1 O MERGE_LIMIT = 4\n")
+        # (no trailing \n: since v0.15 every \n in TEXT is literal — one
+        # Enter each — so it would add a blank line besides the constant)
+        out = await call("edit", command="at /# Merge logic/-1 O MERGE_LIMIT = 4")
         assert "offset -1" in out
         assert "MERGE_LIMIT = 4" in out
 

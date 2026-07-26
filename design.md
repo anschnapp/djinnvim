@@ -561,6 +561,10 @@ src/djinnvim/
                     v0.8: diff renderer public (diff_lines, shared with
                     edit's at-each; renders pure insertions), :g/pat/norm
                     signposts `at each`
+  printcmd.py    ✅ v0.16: the print tool — ex addressing reused from
+                    substitute (_split_range/_resolve_range), window words
+                    above/below/around × tiny(8)/middle(25)/long(50) or a
+                    number, span cap 101, cursor moves only on an address
   session.py     ✅ interface-neutral Session facade (2026-07-10): buffer
                     registry + active buffer + the six operations as
                     string-in/string-out methods; staleness check before
@@ -580,7 +584,7 @@ src/djinnvim/
                     v0.11: async tools with injected Context — lazy client
                     roots/list fetch, list_changed → stale-flag refetch,
                     env roots pinned/exclusive
-tests/           ✅ 296 tests (motion, edit, substitute, registers, undo,
+tests/           ✅ 364 tests (motion, edit, substitute, print, registers, undo,
                     address offsets, i/a inserts, replacement unescaping,
                     at-each global edits, server round-trips, viewport
                     format + caret labels, benchmark gen/report; v0.9:
@@ -1004,8 +1008,21 @@ Global search visibility without content. The antidote to keyhole blindness.
 
 Agents should call `matches` before any rename-like refactor to see all affected sites.
 
+### `print`
+Read-only window print, ed/vim's `:p` (v0.16 — see "`print`: the reading
+keyhole" for the decisions).
+
+- **Input:** `command` — `p` | `:ADDR p` | `:N,M p` | `p above|below|around
+  COUNT` (COUNT = tiny/middle/long = 8/25/50, or a number; address +
+  window combine, a two-address range takes no window word).
+- **Output:** span header + the numbered viewport (`→` cursor marker,
+  context 0). An address moves the cursor (paging); bare `p` doesn't.
+  Span capped at 101 lines; never mutates.
+
 ### `viewport`
-Explicitly view a region without moving anything, when the agent wants a bigger look.
+Superseded 2026-07-26 by `print` (same intent — an explicit bigger look —
+but with ex addressing, cursor-moving paging, and named size tiers instead
+of a `size` parameter). Original sketch:
 
 - **Input:** either `around: "/pattern/"` or `lines: [start, end]`, optional `size` (default 5, max 100)
 - **Output:** numbered lines with cursor marker if in range.
@@ -2026,3 +2043,68 @@ blank-run notes on both `o` and `O`; caret indentation fact — matches,
 deeper, singular-unit "1 space", tabs-vs-spaces, first-line-omitted); 3
 pre-existing trailing-newline tests updated to the new literal semantics
 (`o added\n` now leaves a trailing blank, `o added\n\n` leaves two).
+
+## `print`: the reading keyhole (decided 2026-07-26, v0.16)
+
+Settles dogfood #8's parked item 4 ("not a reading tool") with the
+user's proposal made concrete: mimic ed/vim's `:p` as a **seventh,
+standalone tool** — read-only viewport printing with pattern/line
+addressing and named size tiers. Decisions, settled in conversation:
+
+- **Own tool named `print`, NOT folded into `substitute`.** Folding was
+  considered (rides the existing ex-range parser, avoids a 7th
+  ToolSearch discovery cost) and the tool-rename `substitute` → `ex`
+  briefly agreed — then reversed by the user: the rename fallout
+  (benchmark results were measured against the name `substitute`, which
+  is also the stronger search-replace keyword magnet) outweighs the
+  discovery overhead of one more tool, and a print command living in a
+  tool called `substitute` was never liked. `substitute` stays
+  untouched.
+- **Surface:** `[:][ADDR[,ADDR]] p [above|below|around COUNT]` — ex
+  addressing reused verbatim from `substitute` (line numbers, `$`, `.`,
+  `/pattern/`, all with `+N`/`-N` offsets), plus plain-English window
+  glue per the false-friend corollary (there is no vim spelling for
+  "middle"; inventing ex-lookalike syntax would be the trap).
+- **COUNT:** `tiny`=8, `middle`=25, `long`=50 lines, or a plain
+  integer. `above`/`below` = that many lines on that side plus the
+  cursor line; `around` = that many on EACH side (user decision: the
+  whole count both sides, so `around tiny` is 8+1+8).
+- **Cursor semantics (vim/ed-faithful):** bare `p` prints the current
+  line and moves nothing; an address moves the cursor there (that's the
+  paging mechanism — the gutter's line numbers are the hop targets for
+  successive prints); an explicit two-address range moves to the last
+  printed line, as vim does. Window glue combines with a single address
+  (`:/def load/ p around middle`) but not with a two-address range.
+- **Span cap 101 lines** (= `around long`): a larger explicit range
+  fails loudly suggesting paging — the cap is what keeps `print` a
+  keyhole instead of a full-file read through the back door (the
+  Non-Goals entry stands).
+- **Rendering:** the standard viewport format (gutter numbers, `→`
+  cursor marker), context 0, no caret; header states the span. Never
+  dirties the buffer, no undo entry, no staleness check (like
+  `motion`).
+
+**v0.16 is implemented and green (2026-07-26):** the print tool, as
+specced. New `printcmd.py` (reuses substitute's `_split_range` /
+`_resolve_range` — printcmd imports substitute, never the reverse, no
+cycle); `Session.print`; MCP tool registered as `print` via
+`@mcp.tool(name="print")` (module function `print_`, avoiding the
+builtin); CLI verb `djinnvim print [CMD]` (bare = `p`, one-quoted-
+argument rule applies); daemon `SESSION_OPS` extended. `open`'s
+tool-routing hint now names `print` as the reading tool; SKILL.md's verb
+list grew the print entry ("The seven verbs"); README's CLI line updated
+to seven. 364 tests (23 new in `test_print.py`: bare-p cursor-unchanged,
+address/pattern/offset moves, range-cursor-to-last-line, window words ×
+categories and numbers, each-side around, edge clamping,
+address+window combine, range+window rejected, span cap at exactly 101
+and loud beyond, `%` capped on big / allowed on small files, bad count,
+no-dirty/no-undo, Session render shape; plus CLI dispatch and a server
+round-trip). New e2e (`e2e/e2e_print.py`, real MCP stdio): pattern-
+address jump + `around tiny` window → bare `p` → gutter-number paging
+with an explicit range → span cap loud → `write preview` confirms
+nothing pending and disk untouched. All prior e2es re-run green — after
+fixing one found stale from v0.15: `e2e_preview_offsets.py` still sent
+`O MERGE_LIMIT = 4\n`, which under the literal-`\n` rule inserts an
+extra blank line (3 lines differ, not the asserted 2); the v0.15
+session updated the unit tests but never re-ran the e2es. The `\n`
+dropped; assertion semantics unchanged.
