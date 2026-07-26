@@ -1901,3 +1901,128 @@ real MCP stdio): one-call insert above the banner with `-1`, loud
 out-of-range, two pending edits reviewed with `preview=True` (disk
 byte-identical), write reports the same count, post-write preview clean.
 All prior e2es re-run green.
+
+## Dogfood #8 findings (2026-07-26, third external real-project session)
+
+Same real project as #6/#7, again Opus 5 over MCP, post-v0.14. Result good
+(pattern-anchored insertion beat `Edit`'s exact-match requirement for a
+whole section drop above a banner comment; a pattern-addressed
+`substitute` range delete removed a nine-line function body without
+restating it; buffer/write separation gave ~20 edits, one write, one
+syntax check; the viewport echo replaced re-reads throughout). Friction,
+triaged in conversation (not against the code first this time — the fixes
+were designed live):
+
+1. **Blank-line management ate roughly a third of the calls** — `dd` a
+   duplicate blank, `O` a missing one, a bare `motion` just to look for
+   one. Root-caused to two compounding gaps, not one: (a) `o`/`O` never
+   inherited the reference line's indentation (real vim's `o` does; TEXT
+   was always literal), so every section insert needed hand-typed
+   indentation and a spacing guess; (b) the v0.13 "exactly one trailing
+   newline is the payload terminator" rule broke the 1:1 `\n`-to-Enter
+   mapping a vim-literate model expects — `o body\n` (one apparent
+   trailing blank) silently produced *no* blank line, so getting a
+   trailing blank right required typing `\n\n`, an unintuitive doubling
+   discovered only after a wrong-looking echo.
+2. **Implicit cursor state bit once** — cursor-line `:s/` targeted the
+   wrong line after the cursor had moved from an earlier insert; failed
+   loudly (good), recovered with `:%s/`. Judged working-as-designed, not
+   a gap: cursor position is exactly the kind of state the echo already
+   surfaces (the caret/indentation facts below reduce the need to reason
+   about cursor position blind).
+3. **`-1` offset semantics required re-reasoning at every use site** —
+   "insert above the line above the match" (v0.14's banner idiom) is
+   useful but not self-evident from the syntax alone.
+4. **"Not a reading tool"** — comprehension of unfamiliar code still fell
+   to native `Read`/grep. Confirmed as the accepted Non-Goal, not new
+   friction (see "Full-file read tool" in Non-Goals); a pattern-anchored,
+   named-size-tier read command (`tiny`/`middle`, no line numbers — the
+   user's proposal, echoing the deferred v0 `viewport` tool but staying
+   count-free) was discussed and **parked, not decided** — no design
+   consensus yet on whether the gap is "no bigger keyhole exists" or
+   "the agent reaches for `Read` out of habit."
+5. **No structural feedback on a large single-block insert** — a
+   112-line block dropped via one `o` had no confirmation of internal
+   indentation coherence beyond `py_compile`. Judged adequately answered
+   by existing `write(preview=True)` (v0.14); not actioned further.
+
+Item 1 is the one with a real, scoped fix — see "v0.15" below. Two
+sub-threads worth recording from the design conversation itself: dropping
+the newline-terminator rule reopens the exact stray-trailing-newline
+concern v0.13 introduced it to guard against, but for *every* command,
+not just `o`/`O` (the strip runs on the raw command string before the
+command type is even known) — accepted deliberately, since a stray
+extra blank line is visible in the echo and cheap to `u`, unlike a
+silently eaten intentional one. And the caret's new indentation fact
+(below) is the same move as the labeled caret itself: this doc already
+has a confirmed case of a model miscounting blank lines it could see
+(v0.6, "haiku's six blank-miscounting range deletes") — visible-in-the-
+render is not the same as reliably countable, so state the fact instead
+of asking the model to count it.
+
+## v0.15 (decided 2026-07-26, same session)
+
+Four changes, all scoped to the blank-line/indentation tax:
+
+1. **`o`/`O` inherit indentation by default.** The reference line is the
+   line the cursor sits on when the command runs (post-anchor/offset
+   resolution); if that line is itself blank, walk upward to the nearest
+   non-blank line (vim autoindent behavior — a blank line is treated as
+   sitting at the surrounding indent level, not indent zero, which is
+   also how blank lines read in indent-sensitive languages like Python).
+   TEXT's own leading whitespace is **relative, stacking on top** of the
+   inherited indent (`'  next thing'` after a 4-space reference line
+   lands at 6 spaces) — this cascades naturally across multi-line TEXT,
+   preserving whatever relative indentation the agent typed between its
+   own lines (the same shape as vim's `]p`/`[p` reindent-paste, applied
+   to typed TEXT instead of a register). Blank lines *within* TEXT
+   (`\n\n`) are never padded — they stay truly empty.
+2. **`o!`/`O!` opt out to literal TEXT** — today's pre-v0.15 behavior,
+   for the case of pasting an already-absolutely-indented block (e.g. a
+   moved function). Bang chosen over a plain-English `raw` keyword
+   because the latter collides with legitimate TEXT that happens to
+   start with the word "raw" (`o raw = get_input()`); vim's bang already
+   means "override/force" (`:w!`, `:q!`), so `o!`/`O!` is vim-authentic,
+   not a false friend. Bang only changes indentation; multi-line
+   line-opening behavior is identical to non-bang `o`/`O`.
+3. **The newline-terminator-stripping rule is dropped entirely.** Every
+   `\n` in the command string is now literal, full stop — `o body\n`
+   presses Enter once after "body", leaving exactly one blank line below
+   it, matching real vim's `o` 1:1. (Previously this required `o
+   body\n\n`.) Applies to every command, not just `o`/`O`, since the
+   strip ran on the whole raw command string before the command type was
+   known; the reopened stray-newline risk is accepted (see findings
+   above).
+4. **Two new factual echo additions**, same discipline as the v0.7
+   labeled caret (state don't-count):
+   - **Caret indentation fact:** wherever the labeled caret already
+     fires (column-relevant echoes — motions, not `o`/`O`, which are
+     line-wise and don't trigger it), it now also states the current
+     line's indentation relative to the line above: `indentation matches
+     line above` / `indentation is 2 spaces deeper than line above` /
+     `indentation differs from line above (tabs vs spaces)`. Omitted on
+     the first line of a file. Mixed-unit lines (tabs vs spaces) never
+     get a numeric comparison — a tab isn't a fixed width, so a count
+     would mislead.
+   - **Blank-run fact on `o`/`O`:** every `o`/`O` echo states pre-edit
+     blank-line counts immediately outside the insertion boundary —
+     `2 blank line(s) above insertion point, 0 below` — computed from
+     the buffer before the edit landed, at both sides of wherever the
+     new lines went in. Always included, no condition (cheap, and
+     consistency beat trying to guess when it's "relevant enough").
+
+**v0.15 is implemented and green (2026-07-26):** all four changes, as
+specced. `edit.py`: `_INSERT_CMD` accepts `o!`/`O!` tokens; new
+`_reference_indent` (blank-line walk-up) and `_blank_run_note` helpers;
+`execute()`'s top-level `removesuffix("\n")` removed. `viewport.py`: new
+`_indent_note`/`_indent_kind` helpers, wired into the caret-labeled
+render path alongside the existing `_caret_label`. Tool description
+(`server.py`) and `SKILL.md` updated: the o/O indent-inherit + bang
+paragraph, the literal-`\n` rule, the caret's new indentation clause in
+the workflow section. 340 tests (14 new: indent-inherit default,
+TEXT's-own-whitespace-is-relative, bang opt-out for both `o` and `O`,
+indent-walks-up-past-a-blank-line, TEXT-internal blanks stay unpadded,
+blank-run notes on both `o` and `O`; caret indentation fact — matches,
+deeper, singular-unit "1 space", tabs-vs-spaces, first-line-omitted); 3
+pre-existing trailing-newline tests updated to the new literal semantics
+(`o added\n` now leaves a trailing blank, `o added\n\n` leaves two).

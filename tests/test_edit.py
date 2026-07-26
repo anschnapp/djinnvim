@@ -164,25 +164,25 @@ def test_o_bare_inserts_blank_line():
     assert buf.lines == ["one", ""]
 
 
-def test_o_single_trailing_newline_is_terminator():
+def test_o_trailing_newline_is_literal():
+    # v0.15: every `\n` is literal (vim-exact, no terminator stripping) —
+    # one trailing `\n` is one Enter press, leaving one blank line.
     buf = make(["one"], line=0)
     execute(buf, "o added\n")
-    assert buf.lines == ["one", "added"]
+    assert buf.lines == ["one", "added", ""]
 
 
 def test_o_extra_trailing_newlines_are_blank_lines():
-    # one trailing newline is the payload terminator; further ones are
-    # content (dogfood #6: block insertions ending in a blank separator)
     buf = make(["one"], line=0)
     execute(buf, "o added\n\n")
-    assert buf.lines == ["one", "added", ""]
-    assert buf.cursor.line == 2
+    assert buf.lines == ["one", "added", "", ""]
+    assert buf.cursor.line == 3
 
 
 def test_O_trailing_blank_kept():
     buf = make(["target"], line=0)
     execute(buf, "O block\n\n")
-    assert buf.lines == ["block", "", "target"]
+    assert buf.lines == ["block", "", "", "target"]
 
 
 def test_O_inserts_above():
@@ -196,6 +196,66 @@ def test_o_preserves_indentation_after_separator():
     buf = make(["def f():"], line=0)
     execute(buf, "o     return 1")
     assert buf.lines == ["def f():", "    return 1"]
+
+
+# --- v0.15: o/O indent-inherit + bang opt-out ---
+
+
+def test_o_inherits_reference_indent():
+    buf = make(["def foo():", "    pass"], line=1)
+    execute(buf, "o return 2")
+    assert buf.lines == ["def foo():", "    pass", "    return 2"]
+
+
+def test_o_own_leading_space_is_relative():
+    buf = make(["def foo():", "    pass"], line=1)
+    execute(buf, "o   return 2")
+    assert buf.lines == ["def foo():", "    pass", "      return 2"]
+
+
+def test_O_inherits_reference_indent():
+    buf = make(["    pass"], line=0)
+    execute(buf, "O x = 1")
+    assert buf.lines == ["    x = 1", "    pass"]
+
+
+def test_o_bang_opts_out_of_indent():
+    buf = make(["    pass"], line=0)
+    execute(buf, "o! return 2")
+    assert buf.lines == ["    pass", "return 2"]
+
+
+def test_O_bang_opts_out_of_indent():
+    buf = make(["    pass"], line=0)
+    execute(buf, "O! x = 1")
+    assert buf.lines == ["x = 1", "    pass"]
+
+
+def test_o_indent_walks_up_past_blank_line():
+    buf = make(["    def foo():", "        pass", ""], line=2)
+    execute(buf, "o next")
+    assert buf.lines == ["    def foo():", "        pass", "", "        next"]
+
+
+def test_o_blank_lines_in_text_stay_unindented():
+    buf = make(["    pass"], line=0)
+    execute(buf, "o one\n\ntwo")
+    assert buf.lines == ["    pass", "    one", "", "    two"]
+
+
+# --- v0.15: blank-run fact on o/O ---
+
+
+def test_o_blank_run_note():
+    buf = make(["a", "", "b"], line=0)
+    summary, _, _ = execute(buf, "o x")
+    assert "0 blank line(s) above insertion point, 1 below" in summary
+
+
+def test_O_blank_run_note():
+    buf = make(["a", "", "b"], line=2)
+    summary, _, _ = execute(buf, "O x")
+    assert "1 blank line(s) above insertion point, 0 below" in summary
 
 
 def test_A_appends():

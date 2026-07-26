@@ -281,3 +281,49 @@ def test_caret_label_space():
     buf.cursor.col = 1
     out = render(buf, show_column=True)
     assert out.splitlines()[-1].strip() == '^ on " "'
+
+
+# --- v0.15: indentation-vs-line-above fact ---
+
+
+def test_indent_note_first_line_omitted():
+    buf = Buffer(path=None, lines=["a", "b"])
+    buf.cursor.line, buf.cursor.col = 0, 0
+    out = render(buf, show_column=True)
+    assert out.splitlines()[1].strip() == '^ on "a" of "a"'
+
+
+def test_indent_note_matches():
+    buf = Buffer(path=None, lines=["    x = 1", "    y = 2"])
+    buf.cursor.line, buf.cursor.col = 1, 4
+    out = render(buf, show_column=True)
+    assert out.splitlines()[-1].strip() == (
+        '^ on "y" of "y"; indentation matches line above'
+    )
+
+
+def test_indent_note_deeper():
+    buf = Buffer(path=None, lines=["def f():", "    return 1"])
+    buf.cursor.line, buf.cursor.col = 1, 4
+    out = render(buf, show_column=True)
+    assert out.splitlines()[-1].strip() == (
+        '^ on "r" of "return"; indentation is 4 spaces deeper than line above'
+    )
+
+
+def test_indent_note_shallower_singular():
+    buf = Buffer(path=None, lines=[" x = 1", "y = 2"])
+    buf.cursor.line, buf.cursor.col = 1, 0
+    out = render(buf, show_column=True)
+    assert out.splitlines()[-1].strip() == (
+        '^ on "y" of "y"; indentation is 1 space shallower than line above'
+    )
+
+
+def test_indent_note_tabs_vs_spaces():
+    buf = Buffer(path=None, lines=["\tx = 1", "    y = 2"])
+    buf.cursor.line, buf.cursor.col = 1, 4
+    out = render(buf, show_column=True)
+    assert out.splitlines()[-1].strip() == (
+        '^ on "y" of "y"; indentation differs from line above (tabs vs spaces)'
+    )

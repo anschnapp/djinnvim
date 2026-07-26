@@ -13,6 +13,13 @@ undo step); echoes a substitute-style compact diff instead of a viewport.
 Commands: ciw caw  ci( ci{ ci[ ci" ci'  (+ di/da variants)  diw
           cip/cap dip/dap (paragraph)  dd  cc  o O  A I  i a  D C  x r
           cs{old}{new}  ds{char}  ysiw{char}  (vim-surround)
+v0.15: `o`/`O` inherit the reference line's indent by default (TEXT's own
+leading whitespace stacks on top, vim autoindent-exact); `o!`/`O!` opt out
+to literal TEXT. Every `\n` in TEXT is literal (no terminator stripping) —
+`o body\n` presses Enter once, leaving one blank line below "body". `o`/`O`
+echoes also state pre-edit blank-line counts adjacent to the insertion
+point, and column-relevant echoes state the current line's indentation
+relative to the line above.
           yy  y{i,a}{object}  p P  with register prefix `"name <cmd>`
           ("name yap / "name dd cuts / "name p; bare y→unnamed register)
           u (undo — one buffer change per step, crosses writes; no redo)
@@ -40,7 +47,7 @@ class EditError(Exception):
 _ANCHOR = re.compile(r"^at\s+(?:(\d+)(?:st|nd|rd|th)\s+)?/((?:\\.|[^/])*)/([+-]\d+)?\s*")
 _EACH = re.compile(r"^at\s+each\s+/((?:\\.|[^/])*)/\s*")
 _OBJECT_CMD = re.compile(r"^([cd])([ia])([wWp(){}\[\]\"'`])(?:\s(.*))?$", re.DOTALL)
-_INSERT_CMD = re.compile(r"^(cc|C|o|O|A|I|i|a)(?:\s(.*))?$", re.DOTALL)
+_INSERT_CMD = re.compile(r"^(cc|C|o!|O!|o|O|A|I|i|a)(?:\s(.*))?$", re.DOTALL)
 _CS_CMD = re.compile(r"^cs(.)(.)$")
 _DS_CMD = re.compile(r"^ds(.)$")
 _YSIW_CMD = re.compile(r"^ysiw(.)$")
@@ -61,9 +68,10 @@ def execute(
     first/last are None when there is no viewport to render (yanks and
     register cuts echo their content instead)."""
     # Trailing spaces are preserved: TEXT like `I # ` keeps its trailing space.
-    # Exactly ONE trailing newline is stripped (the payload terminator);
-    # further ones are content: `o body\n\n` inserts body plus one blank line.
-    command = command.lstrip().removesuffix("\n")
+    # Every `\n` is literal content, vim-exact (v0.15): `o body\n` presses
+    # Enter once after "body", leaving one blank line below it, matching
+    # real vim's `o` 1:1 (no terminator-newline stripping).
+    command = command.lstrip()
     if registers is None:
         registers = {}
     saved = (buf.cursor.line, buf.cursor.col)
@@ -460,11 +468,20 @@ def _apply(buf: Buffer, cmd: str) -> tuple[str, int, int]:
     m = _INSERT_CMD.match(cmd)
     if m:
         op, text = m.group(1), m.group(2)
+        raw = op in ("o!", "O!")
+        if raw:
+            op = op[0]
         if not text:
             if op in ("C", "A", "I", "i", "a"):
                 raise EditError(f"{op} needs TEXT: `{op} <text>`")
             text = ""  # bare o/O/cc: insert/leave an empty line
         parts = text.split("\n")
+        if op in ("o", "O") and not raw:
+            # v0.15: inherit the reference line's indent by default (vim-
+            # exact autoindent); TEXT's own leading whitespace stacks on
+            # top. `o!`/`O!` opt out to literal TEXT (pre-v0.15 behavior).
+            indent = _reference_indent(buf.lines, i)
+            parts = [indent + p if p else p for p in parts]
 
         if op == "cc":
             buf.lines[i:i + 1] = parts
@@ -477,18 +494,24 @@ def _apply(buf: Buffer, cmd: str) -> tuple[str, int, int]:
             return _splice(buf, i, col, len(line), text)
 
         if op == "o":
+            note = _blank_run_note(buf.lines, i, i + 1 if i + 1 < len(buf.lines) else None)
             buf.lines[i + 1:i + 1] = parts
             buf.cursor.line, buf.cursor.col = i + len(parts), 0
             return (
-                f"inserted {len(parts)} line(s) below line {i + 1}",
+                f"inserted {len(parts)} line(s) below line {i + 1}\n{note}",
                 i + 1,
                 i + len(parts),
             )
 
         if op == "O":
+            note = _blank_run_note(buf.lines, i - 1 if i > 0 else None, i)
             buf.lines[i:i] = parts
             buf.cursor.line, buf.cursor.col = i + len(parts) - 1, 0
-            return f"inserted {len(parts)} line(s) above line {i + 1}", i, i + len(parts) - 1
+            return (
+                f"inserted {len(parts)} line(s) above line {i + 1}\n{note}",
+                i,
+                i + len(parts) - 1,
+            )
 
         if op == "A":
             return _splice(buf, i, len(line), len(line), text)
@@ -572,7 +595,7 @@ def _apply(buf: Buffer, cmd: str) -> tuple[str, int, int]:
     raise EditError(
         f"unknown edit command: {cmd!r} "
         "(supported: ciw/caw ci(/{{/[/\"/' di/da-variants cip/dap dd cc D C x r "
-        "o O A I i a cs<old><new> ds<char> ysiw<char> yy y<i|a><obj> p P "
+        "o O o! O! A I i a cs<old><new> ds<char> ysiw<char> yy y<i|a><obj> p P "
         "\"name-prefix for registers, u to undo)"
     )
 
@@ -598,6 +621,39 @@ def _surround_delims(new: str) -> tuple[str, str, bool]:
     raise EditError(
         f"unsupported surround delimiter: {new!r} (use a bracket or quote)"
     )
+
+
+def _reference_indent(lines: list[str], i: int) -> str:
+    """Leading whitespace o/O should inherit (v0.15): walk upward past blank
+    lines to the nearest non-blank line — a blank line is considered to sit
+    at the surrounding indent level, not indent zero (vim's autoindent
+    behavior, and how blank lines read in indent-sensitive languages)."""
+    k = i
+    while k > 0 and not lines[k].strip():
+        k -= 1
+    if not lines[k].strip():
+        return ""  # every line up to the top is blank
+    line = lines[k]
+    return line[:len(line) - len(line.lstrip())]
+
+
+def _blank_run_note(
+    lines: list[str], before_idx: int | None, after_idx: int | None
+) -> str:
+    """Pre-edit blank-line counts immediately outside an o/O insertion
+    boundary, stated as a fact instead of left for the model to count from
+    the rendered viewport (same weakness class the labeled caret answers
+    for columns)."""
+    def count(idx: int | None, step: int) -> int:
+        n = 0
+        while idx is not None and 0 <= idx < len(lines) and not lines[idx].strip():
+            n += 1
+            idx += step
+        return n
+
+    above = count(before_idx, -1)
+    below = count(after_idx, 1)
+    return f"{above} blank line(s) above insertion point, {below} below"
 
 
 def _splice(buf: Buffer, i: int, start: int, end: int, text: str) -> tuple[str, int, int]:

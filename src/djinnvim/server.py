@@ -124,11 +124,18 @@ async def edit(command: str, ctx: Context | None = None) -> str:
     end/start), i/a TEXT (insert before / append after the cursor char —
     anchored, `a` lands after the match's FIRST char), cs<old><new>
     (cs"' turns "x" into 'x'), ds<char>, ysiw<char>. Changes need TEXT,
-    deletes take none; everything after the first space is TEXT, verbatim
-    (one trailing newline is stripped as the terminator; further ones are
-    blank lines: `o body\\n\\n` inserts body plus one blank). o/O are
-    line-wise — to insert below a multi-line statement, anchor on its
-    LAST line.
+    deletes take none; everything after the first space is TEXT, verbatim —
+    every `\\n` in it is literal (one Enter each, vim-exact): `o body\\n`
+    leaves one blank line below "body". o/O are line-wise — to insert below
+    a multi-line statement, anchor on its LAST line.
+
+    o/O inherit the current line's indentation by default (vim autoindent):
+    TEXT's own leading whitespace is added on top, so `o  x = 1` after a
+    4-space line lands at 6 spaces. `o!`/`O!` opt out and insert TEXT
+    literally. Both echo pre-edit blank-line counts adjacent to where they
+    landed (`2 blank line(s) above insertion point, 0 below`) so blank-line
+    convention (e.g. 2 lines between top-level defs) can be matched without
+    counting from the viewport.
 
     Registers: yy / y<i|a><obj> yank, p/P paste below/above the cursor line
     (charwise: within it). `"name` prefix composes with the anchor:

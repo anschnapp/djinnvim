@@ -74,11 +74,18 @@ delete), `cip`/`cap`/`dip`/`dap` (paragraph), `dd`, `cc TEXT`, `D`,
 `C TEXT`, `x`, `r<char>`, `o`/`O TEXT` (line below/above; multi-line OK),
 `A`/`I TEXT` (line end/start), `i`/`a TEXT` (before/after the cursor
 char), `cs"'` / `ds"` / `ysiw"` (surround). Changes need TEXT, deletes
-take none; everything after the first space is TEXT, verbatim (indent
-included: `o     x = 1`). One trailing newline is stripped as the
-terminator; further ones are blank lines (`o body\n\n` inserts body plus
-one blank). `o`/`O` are line-wise — to insert below a multi-line
+take none; everything after the first space is TEXT, verbatim — every
+`\n` in it is literal, one Enter each (`o body\n` leaves one blank line
+below "body"). `o`/`O` are line-wise — to insert below a multi-line
 statement, anchor on its LAST line, not its first.
+
+`o`/`O` inherit the current line's indentation by default (vim
+autoindent): TEXT's own leading whitespace stacks on top, so
+`o  x = 1` after a 4-space line lands at 6 spaces. `o!`/`O!` opt out and
+insert TEXT literally, no inherited indent. Both echo pre-edit blank-line
+counts next to where they landed (`2 blank line(s) above insertion
+point, 0 below`) — read it to match a file's blank-line convention (e.g.
+2 lines between top-level defs) without counting from the viewport.
 
 Registers: `yy` / `y<i|a><obj>` yank, `p`/`P` paste. `"name` prefix
 composes with the anchor: `at /def helper/ "fn dap` cuts the function,
@@ -117,7 +124,9 @@ blocks text objects can't grab (function with internal blank lines):
    → `substitute`; many-site structural → `at each`.
 4. **Read every echo.** The diff/viewport is the verification; a wrong
    echo → `edit u` immediately. (The cursor line's `→ ` prefix is exactly
-   as wide as other lines' two-space prefix — indentation shown is exact.)
+   as wide as other lines' two-space prefix — indentation shown is exact.
+   Where the caret appears it also states the line's indentation relative
+   to the line above — read that instead of counting leading spaces.)
 5. `write --preview` for a final buffer-vs-disk diff, then `write`, and
    check the reported changed-line count against what you expect.
 6. **Write before running anything against the file.** Tests, linters,
