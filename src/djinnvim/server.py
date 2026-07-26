@@ -6,6 +6,7 @@ stated explicitly. structured_output=False keeps results as plain multi-line
 text — the structured {"result": ...} wrapping reached the model JSON-escaped,
 destroying viewport alignment (found in benchmark transcripts, 2026-07-13)."""
 
+import inspect
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -15,7 +16,46 @@ from mcp.server.fastmcp import Context, FastMCP
 from . import roots as roots_mod
 from .session import Session
 
-mcp = FastMCP("djinnvim")
+# Cross-cutting guidance lives here, not in the tool descriptions (v0.18).
+# Claude Code truncates every MCP-supplied string at 2048 chars, silently:
+# `edit` had grown to 3944 and half of it — the indent rule, registers, undo,
+# every example — never reached a model. Server instructions are a second
+# 2048-char channel, loaded once and shared by all seven tools, so the rules
+# that span tools belong here and each description keeps only its own.
+# Budget rule: keep this under 2000 chars, and check with the drift test.
+INSTRUCTIONS = """\
+djinnvim is keyhole editing: you never read whole files, you hop between
+pattern anchors and small viewports. Open a file, use `matches` to see every
+relevant site, then one `edit` or `substitute` call per change, reading the
+echoed viewport or diff before the next call. `print` when you need a bigger
+look.
+
+You already know vim. These are the differences that matter:
+
+- No counts, no `.`, no macros, marks or visual mode, and one command per
+  call. Position always comes from a pattern, never from counting lines or
+  columns.
+- TEXT is passed inline instead of typed in insert mode: `ciw foo`,
+  `o     body`, `A  # note`. Exactly one space separates the command from
+  TEXT and the rest is verbatim, so leading and trailing whitespace survive.
+- Newlines in `edit` TEXT must be real newline characters and are inserted
+  1:1, including trailing ones. The two characters backslash-n are NOT
+  translated, they stay as typed, so source like print("a\\nb") lands
+  correctly. In a `substitute` replacement backslash-n does insert a
+  newline: same two characters, opposite meaning in the two tools.
+- Indentation is vim autoindent. Line-wise inserts (`o`, `O`, `cc`) take the
+  reference line's indent and your TEXT's own leading whitespace stacks on
+  top, so pass only the indent BEYOND the anchor's. `o!` / `O!` / `cc!`
+  insert TEXT literally. `substitute` replacements are always literal;
+  capture the indent with `^(\\s*)` and `\\1` if you need it there.
+- The buffer is not the disk. Nothing is saved until `write`, so write
+  before running tests or reading the file with any other tool.
+  `write(preview=True)` shows exactly what is pending.
+- Every success echoes a viewport or a diff and every failure is loud and
+  changes nothing. The echo is your screen: read it before the next call.
+"""
+
+mcp = FastMCP("djinnvim", instructions=INSTRUCTIONS)
 
 # Explicit env roots are exclusive: when set, client roots/list is never
 # consulted — the pinned boundary no client chatter can widen.
@@ -101,71 +141,42 @@ async def motion(command: str, ctx: Context | None = None) -> str:
 
 @mcp.tool(structured_output=False)
 async def edit(command: str, ctx: Context | None = None) -> str:
-    """Edit at the cursor, or anchored: `at /pattern/ <cmd>` (regex) or
-    `at "literal text" <cmd>` (matched literally, no escaping — use it when
-    the anchor contains parens, dots or other regex punctuation; it cannot
-    contain a double quote). Ordinal and offset work on both:
-    `at 2nd /pattern/ <cmd>`. The anchor lands at the START of the match —
-    anchor on the exact text to change: `at /15\\)/ ciw 60` changes the 15
-    in `retries(15)`; `at /retries=15/ ciw 60` would change `retries`.
-    <cmd> is an edit command, never a motion. A `+N`/`-N` after the closing
-    slash moves the anchor N whole lines (cursor at column 0):
-    `at /# Merge logic/-1 O text` inserts above the line ABOVE the match —
-    e.g. above a comment banner the match sits inside.
+    """One vim normal-mode command per call, with TEXT inline (`ciw foo`).
 
-    `at each /pattern/ <cmd>` applies the command at EVERY match (top to
-    bottom, cursor at each match start) and returns a compact ±diff instead
-    of a viewport. One undo step; if the command fails at any site, nothing
-    is changed. Edit commands only (no y/p/u, no registers). Text objects
-    make it structural: `at each /# obsolete/ dap` deletes every marked
-    block/paragraph whole — blank spacing handled, no line counting. To
-    repeat an edit match-by-match instead, reissue the same
-    `at /pattern/ <cmd>` — it anchors on the NEXT match each time.
+    Anchoring replaces moving the cursor first. `at /regex/ <cmd>` edits at
+    the next match; `at "literal text" <cmd>` needs no escaping;
+    `at 2nd /pat/ <cmd>` picks the Nth; `/pat/+N` or `/pat/-N` then shifts N
+    whole lines, which is how you insert above a banner the match sits
+    inside. The anchor lands at the START of the match, so anchor on the
+    exact text you change: `at /15\\)/ ciw 60` changes the 15 in
+    retries(15), while `at /retries=15/ ciw 60` would change retries.
+    <cmd> is an edit command, never a motion.
 
-    Commands: ciw/caw TEXT, ci(/{/[/"/' TEXT (di/da delete),
-    cip/cap/dip/dap (paragraph), dd, cc TEXT, D, C TEXT, x, r<char>,
-    o/O TEXT (line below/above, may be multi-line), A/I TEXT (line
-    end/start), i/a TEXT (insert before / append after the cursor char —
-    anchored, `a` lands after the match's FIRST char), cs<old><new>
-    (cs"' turns "x" into 'x'), ds<char>, ysiw<char>. Changes need TEXT,
-    deletes take none; everything after the first space is TEXT, verbatim.
-    Newlines in TEXT must be real newline characters, one Enter each
-    (vim-exact) — the two characters backslash-n are NOT translated, they
-    stay as typed (so source like print("a\\nb") inserts correctly; this is
-    the opposite of substitute, where \\n in the REPLACEMENT does produce a
-    newline). o/O are
-    line-wise — to insert below a multi-line statement, anchor on its LAST
-    line. `dd` deletes the cursor line; address it by pattern
-    (`at /pattern/ dd`) — edit takes no ex addresses.
+    `at each /pat/ <cmd>` edits EVERY match, replacing vim's `:g//normal`.
+    One undo step, all-or-nothing, and it echoes a compact diff instead of a
+    viewport. No registers, no y/p/u. Text objects make it structural:
+    `at each /# obsolete/ dap` deletes every marked block whole, blank lines
+    included. To step through matches one at a time instead, reissue
+    `at /pat/ <cmd>`: it takes the next match each call.
 
-    o/O inherit the current line's indentation by default (vim autoindent):
-    TEXT's own leading whitespace is added on top, so `o  x = 1` after a
-    4-space line lands at 6 spaces. `o!`/`O!` opt out and insert TEXT
-    literally. Both echo pre-edit blank-line counts adjacent to where they
-    landed (`2 blank line(s) above insertion point, 0 below`) so blank-line
-    convention (e.g. 2 lines between top-level defs) can be matched without
-    counting from the viewport. Blank lines are edits like any other: bare
-    `o`/`O` with no TEXT inserts exactly one empty line, and `dd` anchored
-    on a blank line removes one — read the counts from the echo instead of
-    guessing, and fix spacing with one call rather than a substitute.
+    Commands: ciw/caw, ci(/{/[/"/' plus di/da variants, dip/dap, dd, cc, D,
+    C, x, r<char>, o/O (below/above, may be multi-line), A/I, i/a,
+    cs<old><new>, ds<char>, ysiw<char>, yy and y<i|a><obj>, p/P, u. Changes
+    take TEXT, deletes take none. `a` lands after the match's FIRST char, as
+    in vim. `o`/`O`/`cc` autoindent from the reference line; `o!`/`O!`/`cc!`
+    insert TEXT literally. `o`/`O` report the blank-line counts around the
+    insertion point, so match spacing conventions from that echo rather than
+    by counting.
 
-    Registers: yy / y<i|a><obj> yank, p/P paste below/above the cursor line
-    (charwise: within it). `"name` prefix composes with the anchor:
-    `at /def helper/ "fn dap` cuts the function; `"fn p` pastes it. Only
-    "name-prefixed deletes write registers; yanks/cuts echo their content;
-    a wrong name on p lists them all. `u` undoes the last buffer change
-    (repeat to go further; crosses writes; no redo).
-
-    Returns a summary (`changed line 9 (match 1 of 3)` — if n > 1, check
-    the site) + post-edit viewport. Failures never touch the buffer.
+    A `"name` prefix composes with the anchor: `at /def helper/ "fn dap`
+    cuts, `"fn p` pastes it back, across files too. Only named deletes write
+    a register, `c` never does. `u` undoes one change, no redo.
 
     Examples:
       edit("at /old_name/ ciw new_name")
-      edit("at \\"# merge (skip blocks)\\" O")   # literal anchor, one blank line above
+      edit("at \\"# merge (skip blocks)\\" O")
       edit("at each /log_debug\\(/ dd")
-      edit("at each /# obsolete/ dap")
       edit("at /def helper/ \\"fn dap")   then   edit("\\"fn p")
-      edit("u")
     """
     err = await _ensure_roots(ctx)
     return err if err else session.edit(command)
@@ -256,6 +267,17 @@ async def write(preview: bool = False, ctx: Context | None = None) -> str:
     numbers) — the final review before committing."""
     err = await _ensure_roots(ctx)
     return err if err else session.write(preview)
+
+
+def _dedent_descriptions() -> None:
+    """Docstring indentation is billed against the client's 2048-char budget
+    (123 chars of it in `edit` alone), so strip it once at import."""
+    for tool in mcp._tool_manager._tools.values():
+        if tool.description:
+            tool.description = inspect.cleandoc(tool.description)
+
+
+_dedent_descriptions()
 
 
 def main() -> None:

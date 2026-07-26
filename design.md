@@ -201,8 +201,9 @@ src/djinnvim/
                     cursor-line-local; find_matches shared with edit's anchor
   edit.py        ✅ anchored `at [Nth] /pattern/ <cmd>`, summaries append
                     `(match i of n)` (file-order index); ciw/caw, ci/ca+di/da
-                    for ( { [ " ' `, diw/daw, cip/cap+dip/dap (paragraph,
-                    line-wise), dd, cc, D, C, x, r, o/O (multi-line), A/I;
+                    for ( { [ " ' `, diw/daw, dip/dap (paragraph,
+                    line-wise, delete only — v0.18 dropped cip/cap), dd,
+                    cc, D, C, x, r, o/O (multi-line), A/I;
                     cs/ds/ysiw with vim-surround nuances (open-bracket
                     replacement pads inner spaces, open-bracket target trims
                     them; close bracket = no padding); single-line find_object
@@ -220,7 +221,9 @@ src/djinnvim/
                     one undo step; y/p/u/registers rejected);
                     v0.17: literal anchors `at "text" <cmd>` (escaped,
                     composes with ordinal/offset/at-each), malformed-
-                    anchor + ex-address signpost errors
+                    anchor + ex-address signpost errors;
+                    v0.18: `cc` autoindents like o/O (`cc!` opts out),
+                    cip/cap removed with a two-step signpost
   registers.py   ✅ Register dataclass (lines + linewise kind), shared
                     preview/clip/display/missing-register helpers for both
                     surfaces
@@ -258,8 +261,11 @@ src/djinnvim/
                     the model JSON-escaped) + descriptions cut to ~half;
                     v0.11: async tools with injected Context — lazy client
                     roots/list fetch, list_changed → stale-flag refetch,
-                    env roots pinned/exclusive
-tests/           ✅ 372 tests (motion, edit, substitute, print, registers, undo,
+                    env roots pinned/exclusive; v0.18: INSTRUCTIONS
+                    (server-level, cross-cutting guidance) +
+                    _dedent_descriptions(), both under the 2048-char
+                    client cap
+tests/           ✅ 382 tests (motion, edit, substitute, print, registers, undo,
                     address offsets, i/a inserts, replacement unescaping,
                     at-each global edits, server round-trips, viewport
                     format + caret labels, benchmark gen/report; v0.9:
@@ -276,6 +282,33 @@ The same seven operations are the MCP tool set and the CLI verb set
 (`open`, `motion`, `edit`, `matches`, `substitute`, `print`, `write`).
 Descriptions in the MCP schema carry few-shot examples; on the CLI side
 `skill/SKILL.md` plays that role.
+
+**The guidance budget (v0.18).** Claude Code truncates every MCP-supplied
+string at **2048 characters**, silently, appending `… [truncated]`. That is
+a client limit, not an MCP one, and it applies per tool description, to the
+server's `instructions`, and to prompt bodies. `edit` had grown to 3944 and
+had been over the cap since 2026-07-14, so 48% of it - the indent rule,
+registers, undo, every example - reached no model; the discovery is dogfood
+#10's, recorded in decisions.md. Two consequences are now structural:
+
+- **Cross-cutting guidance lives in `INSTRUCTIONS`** (`server.py`), the
+  once-per-session channel shared by all seven tools: the keyhole loop, no
+  counts / one command per call, TEXT-inline, the newline asymmetry, the
+  indentation contract, buffer-versus-disk, read-the-echo. Descriptions
+  keep only what is specific to their tool, and **one fact lives in one
+  place** or the copies drift. The single deliberate duplicate is the
+  indent rule, kept as a clause in `edit` as well, because instructions are
+  a client courtesy while descriptions are the channel every client must
+  pass to the model.
+- **Descriptions are written as vim deltas.** Models know vim; the budget
+  is spent on what differs (anchoring replaces moving the cursor, `at each`
+  replaces `:g//normal`, TEXT is inline, no counts), not on teaching vim.
+  This is also why making a command vim-exact *buys budget*: v0.18's `cc`
+  fix shrank the indent rule from a paragraph to a clause.
+
+Both caps are enforced by tests plus `e2e/e2e_budget.py`, which measures
+what actually crosses the wire. Docstring indentation counts against the
+budget, so `_dedent_descriptions()` strips it at import.
 
 ### `open`
 Open a file and set it as the active buffer.
@@ -338,7 +371,7 @@ Supported commands (count-free normal-mode subset):
 | `ci( TEXT`, `ci{`, `ci[`, `ci"`, `ci'`, `` ci` `` | Change inside delimiters |
 | `di(`, `da(`, `diw`, `dap`, ... | Delete text object (same object set as `c`) |
 | `dd` | Delete cursor line |
-| `cc TEXT` | Replace cursor line with TEXT |
+| `cc TEXT` | Replace cursor line with TEXT. **Inherits the line's own indentation** (v0.18, vim autoindent); `cc!` opts out to literal TEXT. |
 | `D` / `C TEXT` | Delete / change to end of line |
 | `x` / `r{char}` | Delete / replace char under cursor |
 | `o TEXT` / `O TEXT` | Insert new line(s) below / above cursor. TEXT may be multi-line. **Inherits the reference line's indentation** (v0.15); TEXT's own leading whitespace stacks on top of it, blank lines within TEXT stay truly empty. Bare `o`/`O` inserts exactly one empty line. |
@@ -353,7 +386,7 @@ Supported commands (count-free normal-mode subset):
 | `p` / `P` | Paste register: below/above cursor line (linewise), after/at cursor (charwise) |
 | `"name <cmd>` | Register prefix for `y`/`d`/`p`/`P`: `"block yap`, `"block dd` (cut), `"block p`. Word names take a space; single letters also work vim-style (`"ayy`). Bare `y`→unnamed register; bare deletes never touch registers. |
 
-Text object set: `w`, `W`, `p` (paragraph), `(`/`)`, `{`/`}`, `[`/`]`, `"`, `'`, `` ` ``, with `i` (inner) and `a` (around) variants. Sketched but **not implemented:** `t` (HTML/XML tag), and the commands `J` (join) and `>>`/`<<` (indent/dedent).
+Text object set: `w`, `W`, `p` (paragraph), `(`/`)`, `{`/`}`, `[`/`]`, `"`, `'`, `` ` ``, with `i` (inner) and `a` (around) variants. The paragraph object is **delete-only** (`dip`/`dap`): `cip`/`cap` were removed in v0.18 as the one case with no good answer to "what indent does this replacement get", and the loud error names the two-step (`dip` then `o TEXT`). Sketched but **not implemented:** `t` (HTML/XML tag), and the commands `J` (join) and `>>`/`<<` (indent/dedent).
 
 - **Output:** post-edit viewport of the affected region, plus a one-line summary (`changed line 80`, `deleted lines 45–52`). For multi-line effects the viewport expands to cover the whole affected span ±2 lines. `o`/`O` echoes also state pre-edit blank-line counts on both sides of the insertion point (`2 blank line(s) above insertion point, 0 below`) — always, unconditionally.
 - **Errors:** if the text object cannot be resolved at the cursor (e.g. `ci(` with no enclosing parens on the line), fail loudly with an explanatory message; never guess.
@@ -432,6 +465,15 @@ buffer or cursor; every success echoes a viewport; write appends trailing newlin
   so explicitly. The reopened risk of a stray client newline is accepted:
   an extra blank line is visible in the echo and cheap to `u`, unlike a
   silently eaten intentional one.
+- **The indentation contract** (v0.18, one rule for all three line-wise
+  inserts): `o`, `O` and `cc` take the reference line's indent and TEXT's
+  own leading whitespace stacks on top, so callers pass only the indent
+  BEYOND the anchor's; `o!`/`O!`/`cc!` insert TEXT literally; charwise
+  commands never touch indentation; `substitute` replacements are always
+  literal, which is why its indent-capture recipe exists. That last
+  asymmetry was an active counter-signal - dogfood #10 generalized the
+  capture recipe to `edit` and double-indented - so both texts now
+  cross-reference the other.
 - **Search is strictly-after-cursor** (vim semantics): a match at the cursor
   position is skipped; wrap-around is reported as `(wrapped)`.
 - **`n` is always forward, `N` always backward** (direction of the original
@@ -667,13 +709,15 @@ Exit codes: 0 ok, 1 = editor said `error: ...` (stdout carries it),
 calls, so SKILL.md's rule is to pin `DJINNVIM_ROOTS` inside every command.
 
 **Skill is CLI-only - the MCP ships without one.** The MCP's tool
-descriptions ARE its skill: the whole benchmark ran cold agents on
-descriptions alone, so "works cold from descriptions" is a *measured*
-claim a bundled skill would only dilute, and a second copy of the guidance
-is a hand-sync drift hazard. If discoverability ever fails, the fix is
-descriptions and naming, not a skill. The CLI gets one because it has no
-schema channel at all. SKILL.md ships as package data, version-locked to
-the binary.
+descriptions and server `instructions` ARE its skill: the whole benchmark
+ran cold agents on those alone, so "works cold from descriptions" is a
+*measured* claim a bundled skill would only dilute, and a second copy of
+the guidance is a hand-sync drift hazard. If discoverability ever fails,
+the fix is descriptions and naming, not a skill. The CLI gets one because
+it has no schema channel at all, and since v0.18 SKILL.md is the CLI's copy
+of what MCP clients get from `INSTRUCTIONS`; a test pins the contracts that
+must appear in both. SKILL.md ships as package data, version-locked to the
+binary.
 
 **Distribution: one package, one channel.** Single PyPI package, no
 `[cli]` extras. Blessed paths would be `uvx djinnvim mcp` in MCP configs
@@ -687,16 +731,29 @@ its confinement value duplicates the sandbox above.
 
 ## Status (2026-07-26)
 
-**v0.17, implemented and green: 372 tests, ten e2e scripts over real MCP
+**v0.18, implemented and green: 382 tests, eleven e2e scripts over real MCP
 stdio, one over the real console script.** The full surface is built - the
 seven tools, registers, undo, at-each batch edits, anchor and address
-offsets, literal anchors, write preview, indent-inheriting `o`/`O`, the
-labeled caret, the multi-root sandbox, the CLI + daemon + skill.
+offsets, literal anchors, write preview, indent-inheriting `o`/`O`/`cc`,
+the labeled caret, the multi-root sandbox, the CLI + daemon + skill, and
+(v0.18) server `instructions` as the cross-cutting guidance channel.
 
 Public as `anschnapp/djinnvim` (Apache-2.0), README carries the findings
-tables, `docs/cost-explorer.html` is served via GitHub Pages. Nine dogfood
-sessions run (four of them on a real external project with Opus 5 over
+tables, `docs/cost-explorer.html` is served via GitHub Pages. Ten dogfood
+sessions run (five of them on a real external project with Opus 5 over
 MCP); the benchmark sweep is closed.
+
+**Resolved follow-up from dogfood #10 (README candidate):** the sweep ran
+partly under truncation. `results/*.jsonl` records a `djinnvim_version`
+commit per trial; all but one batch ran on a 2170-char `edit` description,
+122 over the cap, and the 122 chars lost were exactly the last three
+examples - the `at each /# obsolete/ dap` structural example, the register
+cut/paste pair, and `edit("u")`. So the keyhole condition, including the
+move/composite task the README calls "cut/yank/put register territory", was
+measured with the register and undo examples missing. It cuts in our
+favour (the numbers were achieved on less guidance than we believed we
+shipped), which is why it belongs in the README's existing
+numbers-predate-the-current-version note rather than being left unsaid.
 
 Honest position: benchmarked, feature-complete for its thesis, ~zero
 real-world adoption, and only Claude Code has been tested as a client.

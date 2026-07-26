@@ -336,3 +336,34 @@ def test_indent_note_tabs_vs_spaces():
     assert out.splitlines()[-1].strip() == (
         '^ on "y" of "y"; indentation differs from line above (tabs vs spaces)'
     )
+
+
+# --- v0.18: the 2048-char client budget ---
+# Claude Code truncates every MCP-supplied string at 2048 chars without any
+# error. `edit` had silently run over since 2026-07-14 and shipped at 3944,
+# so half its guidance (indent rule, registers, undo, all examples) never
+# reached a model. These tests are the only thing standing between us and a
+# repeat: the failure mode is invisible in normal use.
+
+MCP_DESCRIPTION_LIMIT = 2048
+
+
+def test_every_tool_description_fits_the_client_budget():
+    tools = asyncio.run(server.mcp.list_tools())
+    over = {
+        tool.name: len(tool.description or "")
+        for tool in tools
+        if len(tool.description or "") > MCP_DESCRIPTION_LIMIT
+    }
+    assert not over, f"truncated by the client at {MCP_DESCRIPTION_LIMIT} chars: {over}"
+
+
+def test_server_instructions_fit_the_client_budget():
+    assert server.mcp.instructions
+    assert len(server.mcp.instructions) <= MCP_DESCRIPTION_LIMIT
+
+
+def test_instructions_carry_the_cross_cutting_contracts():
+    text = server.mcp.instructions
+    for contract in ("autoindent", "cc!", "backslash-n", "not the disk"):
+        assert contract in text

@@ -302,12 +302,17 @@ def test_dap_plain_delete():
     assert (first, last) == (0, 0)
 
 
-def test_cip_replaces_paragraph():
+def test_cip_removed_and_signposts_the_two_step():
+    # v0.18: cip/cap dropped — a multi-line paragraph replacement was the one
+    # place with no good answer to "how is this indented", and no dogfood ever
+    # used it. dip/dap stay.
     buf = make(LINES, line=4)
-    out, first, last = edit_mod.execute(buf, "cip pass", {})
-    assert buf.lines == LINES[:3] + ["pass"]
-    assert "replaced lines 4–6 with 1 line(s)" in out
-    assert (first, last) == (3, 3)
+    before = list(buf.lines)
+    with pytest.raises(edit_mod.EditError) as e:
+        edit_mod.execute(buf, "cip pass", {})
+    assert "cip is not supported" in str(e.value)
+    assert "dip" in str(e.value)
+    assert buf.lines == before
 
 
 def test_ap_on_blank_line_takes_next_paragraph():

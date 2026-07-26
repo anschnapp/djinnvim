@@ -63,7 +63,7 @@ or in `.mcp.json` / any MCP client config:
 }
 ```
 
-That's the whole setup - the tool descriptions carry the agent from there (that claim is what the benchmark's cold sessions measure). By default the sandbox follows the client's root grants; set `DJINNVIM_ROOTS` in the server env to pin it instead (see Sandboxing).
+That's the whole setup - the tool descriptions and the server's instructions carry the agent from there (that claim is what the benchmark's cold sessions measure). By default the sandbox follows the client's root grants; set `DJINNVIM_ROOTS` in the server env to pin it instead (see Sandboxing).
 
 ### As a CLI + agent skill
 
@@ -104,7 +104,9 @@ We benchmarked djinnvim against stock Claude Code with generated ground-truth ta
 
 **Why no higher tier?** Opus-class models are unreasonably expensive for tasks of this shape - a full round costs a multiple of the entire remaining sweep, for edits a mid-tier model already handles. The Haiku → Sonnet trend (correctness gaps close while the cost curves keep their shape) suggests the pattern continues one tier up, but we have no measured data for that and don't claim it.
 
-**The numbers predate the current version.** The sweep ran before several later releases, so the measured trials never saw features and refinements added since - among them indentation-inheriting inserts, anchor offsets, write previews, and the `print` reading tool, most of them fixes for friction found in real sessions after the sweep. We strongly believe results today would be at least as good; that is a belief, not a measurement. A fresh round is real money and effort, so we hold it until enough changes or real-world usage have accumulated to make it worth spending - and contributions on the benchmarking side (running cells, new tasks, other models or clients) are very welcome.
+**The numbers predate the current version.** The sweep ran before several later releases, so the measured trials never saw features and refinements added since - among them indentation-inheriting inserts, anchor offsets, write previews, and the `print` reading tool. The sweep also ran with the last three examples in the `edit` tool description cut off by a client-side length limit we only found later, so those trials had slightly less guidance than we thought we were shipping. We strongly believe results today would be at least as good; that is a belief, not a measurement. A fresh round is real money and effort, so we hold it until enough changes or real-world usage have accumulated to make it worth spending - and contributions on the benchmarking side (running cells, new tasks, other models or clients) are very welcome.
+
+**And the guidance has been rewritten, not just extended.** Cross-cutting rules moved into the server's instructions, the tool descriptions were cut back and reframed around what differs from vim rather than what vim already is, and one command (`cc`) changed to remove an inconsistency the docs had been papering over. Two honest notes on that. None of it is measured - rewriting guidance can make a tool worse as easily as better, and we have no data either way. And it came from dogfooding rather than from the grid: real sessions on a real external project, on tasks considerably larger and messier than any benchmark task, where the friction that surfaces is about conventions, whitespace and round-trips rather than about whether a single edit lands. That is a different signal from the benchmark's, neither strictly better nor a substitute for it.
 
 ### The tasks
 

@@ -2,6 +2,8 @@
 Daemon traffic is monkeypatched — the real socket path is covered by
 test_daemon.py and e2e/e2e_cli.py."""
 
+from pathlib import Path
+
 import pytest
 
 import djinnvim.server
@@ -108,3 +110,19 @@ def test_daemon_failure_is_exit_2(monkeypatch, capsys):
     monkeypatch.setattr(daemon, "request", boom)
     assert cli.main(["write"]) == 2
     assert "daemon did not come up" in capsys.readouterr().err
+
+
+# --- v0.18: the skill mirrors the MCP guidance by hand, so pin the parts
+# that drift. The MCP path gets the same rules via server instructions; the
+# CLI has no schema channel at all, so SKILL.md is the only copy it sees.
+
+def test_skill_carries_the_same_contracts_as_the_server_instructions():
+    from djinnvim import server
+
+    text = (Path(cli.__file__).parent / "skill" / "SKILL.md").read_text()
+    for contract in ("autoindent", "cc!", "o!", "backslash-n"):
+        assert contract in text, f"SKILL.md missing: {contract}"
+        assert contract in server.INSTRUCTIONS, f"instructions missing: {contract}"
+    # removed commands must not survive in either copy
+    for gone in ("cip", "cap`"):
+        assert gone not in text, f"SKILL.md still advertises {gone}"

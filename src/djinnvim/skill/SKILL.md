@@ -80,7 +80,7 @@ match-by-match instead, reissue the same `at /pat/ <cmd>`; it anchors on
 the NEXT match each time.
 
 Commands: `ciw`/`caw TEXT`, `ci(`/`{`/`[`/`"`/`' TEXT` (`di`/`da`
-delete), `cip`/`cap`/`dip`/`dap` (paragraph), `dd`, `cc TEXT`, `D`,
+delete), `dip`/`dap` (paragraph, delete only), `dd`, `cc TEXT`, `D`,
 `C TEXT`, `x`, `r<char>`, `o`/`O TEXT` (line below/above; multi-line OK),
 `A`/`I TEXT` (line end/start), `i`/`a TEXT` (before/after the cursor
 char), `cs"'` / `ds"` / `ysiw"` (surround). Changes need TEXT, deletes
@@ -93,13 +93,18 @@ insert below a multi-line statement, anchor on its LAST line, not its
 first. `dd` deletes the cursor line; address it by pattern
 (`at /pattern/ dd`) — `edit` takes no ex addresses.
 
-`o`/`O` inherit the current line's indentation by default (vim
-autoindent): TEXT's own leading whitespace stacks on top, so
-`o  x = 1` after a 4-space line lands at 6 spaces. `o!`/`O!` opt out and
-insert TEXT literally, no inherited indent. Both echo pre-edit blank-line
-counts next to where they landed (`2 blank line(s) above insertion
-point, 0 below`) — read it to match a file's blank-line convention (e.g.
-2 lines between top-level defs) without counting from the viewport.
+**Indentation is vim autoindent.** The line-wise inserts `o`, `O` and `cc`
+take the reference line's indent and your TEXT's own leading whitespace
+stacks on top, so pass only the indent BEYOND the anchor's: `o  x = 1`
+after a 4-space line lands at 6 spaces, and `cc members = sorted(raw)`
+inside an 8-space block stays at 8. `o!`/`O!`/`cc!` opt out and insert
+TEXT literally, for a block that is already absolutely indented.
+(`substitute` replacements are the other way round — always literal, so
+capture the indent there with `^( +)` and `\1`.) `o`/`O` also echo
+pre-edit blank-line counts next to where they landed (`2 blank line(s)
+above insertion point, 0 below`) — read it to match a file's blank-line
+convention (e.g. 2 lines between top-level defs) without counting from
+the viewport.
 
 Blank lines are ordinary edits, one call each: bare `o`/`O` with no TEXT
 inserts exactly one empty line, and `at /pattern/ dd` on a blank line
@@ -127,7 +132,9 @@ not including". Zero matches is a loud error, never a silent no-op.
 Numeric addresses go stale after every edit; prefer pattern addresses.
 To rewrite one line into several without retyping its indentation,
 capture it: `:s/^( +)old_tail/\1new\n\1    second line/` (`\n` in the
-replacement inserts a line break).
+replacement inserts a line break). Replacements are always literal here —
+this capture is only needed in `substitute`; `edit`'s `o`/`O`/`cc` supply
+the indent for you.
 
 Line-shaped only: to remove whole blocks at every match use
 `edit 'at each /pat/ dap'`, not hand-counted ranges. Register ranges for

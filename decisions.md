@@ -1776,6 +1776,126 @@ bare `O` adds the blank line → multi-line TEXT with real newlines and a
 surviving literal backslash-n → `at each "a + b"` → exact target match.
 All nine prior e2es re-run green.
 
+## Dogfood #10 findings (2026-07-26, fifth external real-project session)
+
+Same real project, Opus 5 over MCP, post-v0.17. Roughly 8 corrective calls
+out of ~25. The agent's own triage put the ratio at 5 guidance : 2 command
+design : 1 its own error, and its verdict on the task ("mostly big clean
+insertions at findable anchors") was "about a wash with Edit: better on
+tokens and on targeting ambiguous sites, worse on round-trips". What worked
+was the part we already believed: anchored edits beat quoting context for
+uniqueness, a 145-line block went in as one call with exact indentation,
+`matches` then `at 2nd /ax, ay = a.center\(\)/` disambiguated two identical
+lines with no context quoting at all, and every mistake was caught by the
+echo rather than by a later test run.
+
+**The finding that reframes the previous three sessions: the guidance was
+never delivered.** The agent noted in passing that the `edit` description
+arrived cut off mid-sentence. Verified directly: Claude Code (2.1.220)
+truncates every MCP-supplied string at **2048 characters** - constant `LB`
+in the bundle, applied to tool descriptions, server instructions and prompt
+bodies alike - and appends "… [truncated]" with no error anywhere. `edit`
+had grown to 3944 chars, so **1898 chars, 48 percent, reached no model**:
+the o/O indent rule, `o!`/`O!`, the blank-line-count guidance, all of
+registers and paste, `u`, and every one of the six examples.
+
+Git history of that docstring: 1067 chars (07-10), over the cap since
+2026-07-14 (2170), then 2398, 2621, 3076, 3944. So every guidance fix
+written into it since v0.6's shortening pass - including v0.15's indent
+paragraph, which existed precisely to prevent dogfood #10's top complaint -
+landed in the invisible half. That is the "spinning in circles on
+indentation" feeling: we kept fixing the docs in a place no model reads.
+The other six descriptions were all under the cap; `edit` was the only
+casualty.
+
+**Was the benchmark itself truncated? Yes, mildly - checked, not guessed.**
+`benchmark/results/*.jsonl` records a `djinnvim_version` commit per trial.
+All but one batch (`6c8261d`, 82 trials, 1977 chars, whole) ran on a
+2170-char description, 122 over the cap. The lost 122 chars were exactly
+the last three examples: `edit("at each /# obsolete/ dap")`, the register
+pair `at /def helper/ "fn dap` then `"fn p`, and `edit("u")`. So the
+keyhole condition - including the move/composite task the README calls
+"cut/yank/put register territory" - was measured with the register and
+undo examples missing from the description. The direction is favourable
+(the numbers came from less guidance than we thought we shipped), which is
+exactly why it should be stated rather than sat on; the natural home is the
+README's existing "the numbers predate the current version" note.
+
+The rest of the triage:
+
+1. **`cc` was a genuine false friend.** `o`/`O` inherit indent (v0.15) and
+   `cc` did not, so a replacement landed at column 0 inside an 8-space
+   block. Vim's `cc` under autoindent keeps the line's own indent, so this
+   was our deviation from the model the tool otherwise follows exactly -
+   the corollary in principle 1 says vim spelling is used only where
+   behavior is vim-exact. Fixed, not documented around.
+2. **The `substitute` indent-capture recipe is an active counter-signal.**
+   `:s/^( +)tail/\1new/` teaches "retype the indent", which the agent
+   generalized to `edit`. Both copies now cross-reference the other.
+3. **Doubled blank lines** (five `:Nd` calls to clean up after `O` plus a
+   trailing newline). The agent proposed auto-collapsing them, using the
+   blank-line counts the echo already reports. **Rejected:** that reverses
+   v0.15's literal-newline decision, taken after getting it wrong twice,
+   and it is silent state mutation. Guidance, not behavior.
+4. **`:s/` scoped to the cursor line after the cursor had drifted** - the
+   agent's own error, documented plainly, left alone.
+5. **"Nothing validates syntax"** - already decided (parse/LSP feedback on
+   `write` rejected); correctness comes from running the tests.
+
+## v0.18 (decided and implemented 2026-07-26, same session)
+
+**The guidance budget is now a first-class constraint.** Two channels, each
+capped at 2048 chars by the client:
+
+- **Server `instructions`** (`FastMCP(instructions=...)`, previously unset,
+  1801 chars): loaded once, shared by all seven tools, and the home of
+  everything cross-cutting - the keyhole loop, the no-counts/one-command
+  rule, TEXT-inline, the newline asymmetry, the indentation contract,
+  buffer-versus-disk, read-the-echo. Confirmed delivered on the wire in
+  `initialize` by a new e2e.
+- **Tool descriptions** keep only what is specific to one tool. `edit`
+  dropped 3944 -> 1878 with nothing lost, because the cross-cutting half
+  moved rather than being deleted.
+
+Three supporting decisions. **One fact, one place:** if a rule is in
+instructions, a description points at it in a few words instead of
+restating it, or the two copies drift. The one deliberate exception is the
+indent rule, which stays as a clause in `edit` too, because server
+instructions are a client courtesy while descriptions are the channel every
+client must pass to the model, and a client that drops instructions would
+otherwise silently corrupt indentation. **Docstring indentation is billed
+against the budget** (123 chars in `edit` alone), so `_dedent_descriptions()`
+strips it at import. **The framing for descriptions is now the vim delta:**
+models know vim, so the text spends its budget on what differs (anchoring
+replaces moving the cursor, `at each` replaces `:g//normal`, TEXT is inline,
+no counts) rather than on teaching vim.
+
+**`cc` joins `o`/`O` under vim autoindent**, with `cc!` as the literal
+opt-out, reusing `_reference_indent` unchanged (so a `cc` on a blank line
+takes the indent of the nearest non-blank line above, as `o`/`O` do). One
+contract for all three line-wise inserts; the payoff beyond correctness is
+that vim-exact behavior needs no explanation, which is how the indent rule
+shrank from a paragraph to a clause.
+
+**`cip`/`cap` removed** (`dip`/`dap` stay). A multi-line replacement of a
+whole paragraph was the one place with no good answer to "what indent does
+this get", it had exactly one test and no dogfood ever used it, and
+deleting it settled the question by subtraction. The loud error names the
+two-step (`dip` then `o <text>`) and points at `substitute` for a ranged
+rewrite. `dap` is untouched and remains load-bearing: `at each /# obsolete/
+dap` is the headline structural idiom.
+
+382 tests (10 new: the 2048-char budget for every description and for
+instructions, instructions carry the cross-cutting contracts, SKILL.md
+mirrors them and no longer advertises removed commands, `cc` inherits the
+replaced line's indent, TEXT indent stacks on it, multi-line `cc` indents
+every line while blanks stay empty, `cc!` literal, `cc` on a blank line
+takes the indent above, `cip` removed with a signpost). New e2e
+(`e2e/e2e_budget.py`, real MCP stdio): instructions advertised and under
+cap, all seven descriptions under cap and untruncated, `cc` autoindent,
+`cc!` literal, `cip` signposted, `dap` still structural. All ten prior e2es
+re-run green.
+
 ## Appendix: superseded designs
 
 Sketches and plans that were replaced. Kept because the replacement

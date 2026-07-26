@@ -143,6 +143,46 @@ def test_cc_multiline():
     assert (first, last) == (0, 1)
 
 
+# v0.18: cc joins o/O under vim autoindent. Dogfood #10 landed a replacement
+# at column 0 inside an 8-space block because cc alone stayed literal — one
+# insert command adding base indent and another not was a false friend.
+
+def test_cc_inherits_the_replaced_line_indent():
+    buf = make(["class A:", "        members = old", "        x = 1"], line=1)
+    execute(buf, "cc members = sorted(raw)")
+    assert buf.lines[1] == "        members = sorted(raw)"
+
+
+def test_cc_text_indent_stacks_on_the_inherited_indent():
+    buf = make(["    a = 1", "    b = 2"], line=1)
+    execute(buf, "cc     nested = 3")
+    assert buf.lines[1] == "        nested = 3"
+
+
+def test_cc_multiline_indents_every_line_and_keeps_blanks_empty():
+    buf = make(["    a = 1"], line=0)
+    execute(buf, "cc x = 1\n\ny = 2")
+    assert buf.lines == ["    x = 1", "", "    y = 2"]
+
+
+def test_cc_bang_is_literal():
+    buf = make(["class A:", "        members = old"], line=1)
+    execute(buf, "cc! members = sorted(raw)")
+    assert buf.lines[1] == "members = sorted(raw)"
+
+
+def test_cc_on_blank_line_takes_the_indent_above():
+    buf = make(["    a = 1", "", "    b = 2"], line=1)
+    execute(buf, "cc c = 3")
+    assert buf.lines[1] == "    c = 3"
+
+
+def test_cc_bang_bare_leaves_an_empty_line():
+    buf = make(["    a = 1"], line=0)
+    execute(buf, "cc!")
+    assert buf.lines == [""]
+
+
 def test_o_inserts_below_and_moves_cursor():
     buf = make(["one", "two"], line=0)
     summary, first, last = execute(buf, "o added")

@@ -14,11 +14,11 @@ at EVERY match (per match, column-precise, bottom-up, transactional, one
 undo step); echoes a substitute-style compact diff instead of a viewport.
 
 Commands: ciw caw  ci( ci{ ci[ ci" ci'  (+ di/da variants)  diw
-          cip/cap dip/dap (paragraph)  dd  cc  o O  A I  i a  D C  x r
+          dip/dap (paragraph, delete only)  dd  cc  o O  A I  i a  D C  x r
           cs{old}{new}  ds{char}  ysiw{char}  (vim-surround)
-v0.15: `o`/`O` inherit the reference line's indent by default (TEXT's own
-leading whitespace stacks on top, vim autoindent-exact); `o!`/`O!` opt out
-to literal TEXT. Every `\n` in TEXT is literal (no terminator stripping) —
+v0.15/v0.18: the line-wise inserts `o`/`O`/`cc` inherit the reference line's
+indent (TEXT's own leading whitespace stacks on top, vim autoindent-exact);
+`o!`/`O!`/`cc!` opt out to literal TEXT. Every `\n` in TEXT is literal (no terminator stripping) —
 `o body\n` presses Enter once, leaving one blank line below "body". `o`/`O`
 echoes also state pre-edit blank-line counts adjacent to the insertion
 point, and column-relevant echoes state the current line's indentation
@@ -58,7 +58,7 @@ _AT_PREFIX = re.compile(r"^at\s")
 # that keeps falling through to the supported-command list)
 _EX_ADDRESS = re.compile(r"^[:%$]|^\d+\s*[,\s]")
 _OBJECT_CMD = re.compile(r"^([cd])([ia])([wWp(){}\[\]\"'`])(?:\s(.*))?$", re.DOTALL)
-_INSERT_CMD = re.compile(r"^(cc|C|o!|O!|o|O|A|I|i|a)(?:\s(.*))?$", re.DOTALL)
+_INSERT_CMD = re.compile(r"^(cc!|cc|C|o!|O!|o|O|A|I|i|a)(?:\s(.*))?$", re.DOTALL)
 _CS_CMD = re.compile(r"^cs(.)(.)$")
 _DS_CMD = re.compile(r"^ds(.)$")
 _YSIW_CMD = re.compile(r"^ysiw(.)$")
@@ -503,18 +503,21 @@ def _apply(buf: Buffer, cmd: str) -> tuple[str, int, int]:
     m = _INSERT_CMD.match(cmd)
     if m:
         op, text = m.group(1), m.group(2)
-        raw = op in ("o!", "O!")
+        raw = op in ("o!", "O!", "cc!")
         if raw:
-            op = op[0]
+            op = op[:-1]
         if not text:
             if op in ("C", "A", "I", "i", "a"):
                 raise EditError(f"{op} needs TEXT: `{op} <text>`")
             text = ""  # bare o/O/cc: insert/leave an empty line
         parts = text.split("\n")
-        if op in ("o", "O") and not raw:
+        if op in ("o", "O", "cc") and not raw:
             # v0.15: inherit the reference line's indent by default (vim-
             # exact autoindent); TEXT's own leading whitespace stacks on
-            # top. `o!`/`O!` opt out to literal TEXT (pre-v0.15 behavior).
+            # top. `o!`/`O!`/`cc!` opt out to literal TEXT.
+            # v0.18: `cc` joined them — vim's cc under autoindent keeps the
+            # line's own indent, so leaving it literal was a false friend
+            # (dogfood #10 landed a replacement at column 0).
             indent = _reference_indent(buf.lines, i)
             parts = [indent + p if p else p for p in parts]
 
@@ -566,6 +569,16 @@ def _apply(buf: Buffer, cmd: str) -> tuple[str, int, int]:
     m = _OBJECT_CMD.match(cmd)
     if m:
         op, scope, obj, text = m.groups()
+        if op == "c" and obj == "p":
+            # v0.18: cip/cap removed. A multi-line replacement of a whole
+            # paragraph is the one case where "how is this indented" had no
+            # good answer, and no dogfood ever used it. Delete + insert says
+            # the same thing in two echoed steps.
+            raise EditError(
+                f"c{scope}p is not supported (delete then insert: "
+                f"`d{scope}p` then `o <text>`, or use substitute for a "
+                f"ranged rewrite); d{scope}p still works"
+            )
         if op == "c" and not text:
             raise EditError(
                 f"c{scope}{obj} needs TEXT: `c{scope}{obj} <text>` "
@@ -573,20 +586,14 @@ def _apply(buf: Buffer, cmd: str) -> tuple[str, int, int]:
             )
         if op == "d" and text and text.strip():
             raise EditError(f"d{scope}{obj} takes no TEXT (use c{scope}{obj} to change)")
-        if obj == "p":  # paragraph: the one line-wise text object
+        if obj == "p":  # paragraph: the one line-wise text object (delete only)
             a, b = _paragraph_span(buf.lines, i, around=scope == "a")
-            if op == "d":
-                del buf.lines[a:b + 1]
-                if not buf.lines:
-                    buf.lines = [""]
-                buf.cursor.line = min(a, len(buf.lines) - 1)
-                buf.cursor.col = 0
-                return f"deleted lines {a + 1}–{b + 1}", buf.cursor.line, buf.cursor.line
-            parts = (text or "").split("\n")
-            buf.lines[a:b + 1] = parts
-            buf.cursor.line, buf.cursor.col = a, 0
-            last = a + len(parts) - 1
-            return f"replaced lines {a + 1}–{b + 1} with {len(parts)} line(s)", a, last
+            del buf.lines[a:b + 1]
+            if not buf.lines:
+                buf.lines = [""]
+            buf.cursor.line = min(a, len(buf.lines) - 1)
+            buf.cursor.col = 0
+            return f"deleted lines {a + 1}–{b + 1}", buf.cursor.line, buf.cursor.line
         start, end = find_object(line, col, obj, around=scope == "a")
         return _splice(buf, i, start, end, text or "")
 
@@ -638,7 +645,7 @@ def _apply(buf: Buffer, cmd: str) -> tuple[str, int, int]:
         )
     raise EditError(
         f"unknown edit command: {cmd!r} "
-        "(supported: ciw/caw ci(/{{/[/\"/' di/da-variants cip/dap dd cc D C x r "
+        "(supported: ciw/caw ci(/{{/[/\"/' di/da-variants dip/dap dd cc cc! D C x r "
         "o O o! O! A I i a cs<old><new> ds<char> ysiw<char> yy y<i|a><obj> p P "
         "\"name-prefix for registers, u to undo)"
     )
