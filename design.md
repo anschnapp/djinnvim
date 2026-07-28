@@ -793,7 +793,12 @@ binary.
 `[cli]` extras. Blessed paths would be `uvx djinnvim mcp` in MCP configs
 and `pipx install djinnvim` for CLI users; **PyPI publishing is currently
 deferred**, so git-URL installs (`uvx --from git+...`,
-`pipx install git+...`) are the supported channel. `publish.yml` (test ->
+`pipx install git+...`) are the supported channel, with a **plain-pip path
+documented alongside them** (clone, `python3 -m venv .venv`,
+`.venv/bin/pip install .`, then point the MCP client at
+`.venv/bin/djinnvim mcp` by absolute path) so neither uv nor pipx is a hard
+dependency - the absolute path is the load-bearing part, since clients spawn
+the server with their own cwd and `PATH`. `publish.yml` (test ->
 build -> trusted publishing on `v*` tags) stays wired and dormant.
 Accepted risk: the `djinnvim` name stays unreserved on PyPI. Docker was
 rejected - host-vs-container path identity breaks the roots semantics, and

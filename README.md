@@ -65,6 +65,40 @@ or in `.mcp.json` / any MCP client config:
 
 That's the whole setup - the tool descriptions and the server's instructions carry the agent from there (that claim is what the benchmark's cold sessions measure). By default the sandbox follows the client's root grants; set `DJINNVIM_ROOTS` in the server env to pin it instead (see Sandboxing).
 
+**Without uv**, clone and install into a venv with plain pip, then point the
+client at that venv's binary by absolute path:
+
+```bash
+git clone https://github.com/anschnapp/djinnvim
+cd djinnvim
+python3 -m venv .venv
+.venv/bin/pip install .
+.venv/bin/djinnvim --help        # sanity check
+```
+
+```bash
+claude mcp add djinnvim -- /abs/path/to/djinnvim/.venv/bin/djinnvim mcp
+```
+
+```json
+{
+  "mcpServers": {
+    "djinnvim": {
+      "command": "/abs/path/to/djinnvim/.venv/bin/djinnvim",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+The absolute path is what matters: MCP clients spawn the server with their own
+cwd and `PATH`, so a bare `djinnvim` or an activated shell won't be visible to
+them. `.venv/bin/python -m djinnvim mcp` works identically if you prefer it.
+Installing without a venv (`pip install --user .`, or into an environment you
+manage yourself) is fine too - point the client at wherever that put the
+`djinnvim` binary. Since this is a plain checkout install, updating means
+`git pull` plus a re-run of `.venv/bin/pip install .`.
+
 ### As a CLI + agent skill
 
 For agents that talk through a shell instead of MCP (and for humans), install the binary durably on PATH via [pipx](https://pipx.pypa.io/):
@@ -72,6 +106,14 @@ For agents that talk through a shell instead of MCP (and for humans), install th
 ```bash
 pipx install git+https://github.com/anschnapp/djinnvim
 djinnvim install-skill        # writes the agent skill to ~/.claude/skills (--project for ./.claude/skills)
+```
+
+Without pipx, the venv checkout above gives you the same binary at
+`.venv/bin/djinnvim`; symlink it onto your `PATH` (or add the `bin` dir) so the
+skill's plain `djinnvim ...` commands resolve:
+
+```bash
+ln -s /abs/path/to/djinnvim/.venv/bin/djinnvim ~/.local/bin/djinnvim
 ```
 
 The CLI mirrors the seven MCP tools as verbs (`djinnvim open`, `motion`, `edit`, `substitute`, `print`, `matches`, `write`), backed by an auto-spawned per-session daemon that holds the buffer state between calls - `djinnvim status` shows it, `djinnvim shutdown` kills it. Pass each editor command as one quoted argument:
