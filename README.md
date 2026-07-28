@@ -77,10 +77,15 @@ djinnvim install-skill        # writes the agent skill to ~/.claude/skills (--pr
 The CLI mirrors the seven MCP tools as verbs (`djinnvim open`, `motion`, `edit`, `substitute`, `print`, `matches`, `write`), backed by an auto-spawned per-session daemon that holds the buffer state between calls - `djinnvim status` shows it, `djinnvim shutdown` kills it. Pass each editor command as one quoted argument:
 
 ```bash
-djinnvim open pipeline.py
-djinnvim edit 'at /retries=3/ ciw 5'
+djinnvim edit -f pipeline.py 'at /retries=3/ ciw 5'
 djinnvim write
 ```
+
+`-f/--file` (MCP: a `path` argument) names the file to work on and opens it
+if needed, on `edit`, `substitute`, `print`, `matches` and `write` - so a
+one-line change is one call plus the write. `djinnvim open` is still there
+for when you want the file's metadata, or to switch back to an already-open
+buffer.
 
 ## The benchmark
 

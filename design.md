@@ -249,7 +249,9 @@ src/djinnvim/
                     edit/substitute/write; v0.11: multi-root sandboxing
                     (any-of-roots containment at open, resolve-before-
                     check, single-root relative resolution, write-time
-                    revalidation)
+                    revalidation); v0.19: _switch/_activate/_enter — the
+                    optional `path` on every op but motion, switch note,
+                    no-discard carve-out
   roots.py       ✅ v0.11: sandbox root resolution — DJINNVIM_ROOTS
                     (pathsep list, exclusive) / DJINNVIM_ROOT alias,
                     per-source `/`+$HOME sanity refusal,
@@ -264,8 +266,9 @@ src/djinnvim/
                     env roots pinned/exclusive; v0.18: INSTRUCTIONS
                     (server-level, cross-cutting guidance) +
                     _dedent_descriptions(), both under the 2048-char
-                    client cap
-tests/           ✅ 382 tests (motion, edit, substitute, print, registers, undo,
+                    client cap; v0.19: optional `path` params + selection
+                    clauses leading each entry-point description
+tests/           ✅ 390 tests (motion, edit, substitute, print, registers, undo,
                     address offsets, i/a inserts, replacement unescaping,
                     at-each global edits, server round-trips, viewport
                     format + caret labels, benchmark gen/report; v0.9:
@@ -273,7 +276,8 @@ tests/           ✅ 382 tests (motion, edit, substitute, print, registers, undo
                     compact batch-undo diff, exact write count; v0.11:
                     multi-root sandbox — traversal/symlink containment,
                     env parsing, per-source refusals, write revalidation,
-                    server resolution chain)
+                    server resolution chain; v0.19: optional-path wire
+                    shape, CLI -f flag, selection clauses pinned)
 ```
 
 ## The seven tools
@@ -306,12 +310,78 @@ registers, undo, every example - reached no model; the discovery is dogfood
   This is also why making a command vim-exact *buys budget*: v0.18's `cc`
   fix shrank the indent rule from a paragraph to a clause.
 
+### Being chosen: the selection problem (v0.19)
+
+Everything above assumes the model already decided to use djinnvim. Live
+use in a third-party harness (Copilot, Opus 4.8, ordinary source files)
+showed it never getting picked at all, so v0.19 treats *selection* as its
+own design surface. Two causes, and only the second is about wording:
+
+- **The arithmetic was against us.** A minimal change cost `open` + `edit`
+  + `write`, three calls, against a native editor's one stateless call.
+  When the model has already read the file for other reasons, the read-side
+  saving is spent before the edit even comes up, so on an ordinary file the
+  model was pricing correctly. The fix is mechanical: **every op but
+  `motion` takes an optional `path`** (see below), which removes the setup
+  call and, just as important, makes each tool *read* as self-contained in
+  the schema instead of "requires prior stateful setup".
+- **Nothing in the schema said when to prefer this.** Every description
+  answered *how*, in a tool list where selection is decided on the first
+  sentence or two. Each entry-point description (`edit`, `matches`,
+  `print`, `substitute`) now leads with the condition under which it wins,
+  and `edit` carries the honest negative ("not for creating files or
+  rewriting one wholesale"). The negative is load-bearing, not politeness:
+  a tool that says where it loses gets believed about where it wins, and it
+  is also what keeps this from degenerating into "always use djinnvim".
+
+**Selection guidance is the second deliberate duplicate** (after the indent
+rule) between `INSTRUCTIONS` and the descriptions. The reason is the same:
+`instructions` is a client courtesy that several clients drop entirely, and
+Copilot is exactly that case, so the reason to pick a tool has to survive in
+the channel every client must pass on. Written as a lead clause replacing
+each flat definition sentence, not as an added paragraph - the whole point
+of the budget section is that there is nothing to spare. `edit` had to give
+back ~90 chars to fit; one example line went, because it duplicated the
+register paragraph above it verbatim.
+
+Honest scope: on a 300-line file with one edit, djinnvim probably *should*
+lose, and no description should try to win that case. The goal is being
+picked when the condition holds, which requires the condition to be stated.
+
 Both caps are enforced by tests plus `e2e/e2e_budget.py`, which measures
 what actually crosses the wire. Docstring indentation counts against the
 budget, so `_dedent_descriptions()` strips it at import.
 
+### The optional `path` (v0.19)
+
+`edit`, `substitute`, `print`, `matches` and `write` all take an optional
+`path`, defined as **exactly `open(path)` first, nothing else changed** -
+one rule, no per-tool drift. Consequences worth stating:
+
+- **`open` becomes optional**, kept for when you want the file's header or
+  to switch back to an already-open buffer. The three-call floor is gone: a
+  one-line change is `edit(cmd, path=...)` then `write(path=...)`.
+- **The switch is announced** - `[now on /abs/path — N lines]` prefixes the
+  echo whenever the active buffer actually changed, and stays silent when
+  the path names the buffer already active, so repeated calls carry no
+  noise. A changed active buffer is a state change and the no-silent-state
+  rule applies to it. `write` omits the note only because every one of its
+  echoes names the path itself.
+- **One carve-out: an implicit switch never discards unwritten changes.**
+  Explicit `open` reloads a stale file and says so; `path=` on a buffer
+  that is *both* dirty and stale raises the usual staleness error instead.
+  Implicit actions must not destroy data. The visible cost is that
+  `print(path=X)` can fail where bare `print()` succeeds, since `path` is a
+  request to open and that open cannot be honored safely.
+- **`motion` is deliberately excluded.** It is a within-file cursor op;
+  "open this file and jump to a pattern" is what `print`/`matches` with a
+  path already do better, and the surface stays smaller.
+- **CLI: `-f/--file`** on the same five verbs. It matters more there than
+  over MCP, since CLI processes are stateless and the file has to be named
+  somewhere anyway.
+
 ### `open`
-Open a file and set it as the active buffer.
+Open a file and set it as the active buffer. Optional since v0.19 (see above).
 
 - **Input:** `path` (string)
 - **Output:** file metadata (path, line count, size, detected language) + viewport at line 1. Never the full content.
@@ -729,14 +799,21 @@ Accepted risk: the `djinnvim` name stays unreserved on PyPI. Docker was
 rejected - host-vs-container path identity breaks the roots semantics, and
 its confinement value duplicates the sandbox above.
 
-## Status (2026-07-26)
+## Status (2026-07-28)
 
-**v0.18, implemented and green: 382 tests, eleven e2e scripts over real MCP
+**v0.19, implemented and green: 390 tests, twelve e2e scripts over real MCP
 stdio, one over the real console script.** The full surface is built - the
 seven tools, registers, undo, at-each batch edits, anchor and address
 offsets, literal anchors, write preview, indent-inheriting `o`/`O`/`cc`,
-the labeled caret, the multi-root sandbox, the CLI + daemon + skill, and
-(v0.18) server `instructions` as the cross-cutting guidance channel.
+the labeled caret, the multi-root sandbox, the CLI + daemon + skill,
+(v0.18) server `instructions` as the cross-cutting guidance channel, and
+(v0.19) the optional `path` plus per-tool selection guidance.
+
+**Open question v0.19 answers only on paper:** whether the tools now get
+*chosen* in a foreign harness. The change was made from one negative
+observation (Copilot + Opus 4.8, never selected); the next external session
+is the measurement, and if it still loses, the remaining lever is naming,
+not more words.
 
 Public as `anschnapp/djinnvim` (Apache-2.0), README carries the findings
 tables, `docs/cost-explorer.html` is served via GitHub Pages. Ten dogfood

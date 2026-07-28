@@ -1896,6 +1896,90 @@ cap, all seven descriptions under cap and untruncated, `cc` autoindent,
 `cc!` literal, `cip` signposted, `dap` still structural. All ten prior e2es
 re-run green.
 
+## Dogfood #11 findings (2026-07-28, first foreign-harness session)
+
+First use outside Claude Code: the user's normal harness (Copilot, Opus 4.8)
+with the MCP server installed, ordinary source files, no huge inputs. One
+finding, and it is the largest one the project has had: **the tools were
+never chosen at all.** Not misused, not preferred for the wrong tasks -
+simply not selected, with the native editor doing everything. Every prior
+dogfood measured how well djinnvim works *once picked*; this one measured
+whether it gets picked, and the answer was no.
+
+Two causes, separated because only one is about wording:
+
+1. **The call arithmetic.** A one-line change cost `open` + `edit` +
+   `write` against a native editor's single stateless call, and in a real
+   session the model has usually already read the file for other reasons,
+   so the read-side saving is spent before the edit comes up. On an
+   ordinary file the model was pricing correctly. This is not a
+   presentation problem and no description could have fixed it.
+2. **Nothing in the schema said when to prefer djinnvim.** All seven
+   descriptions answer *how*, in a list where selection is decided on the
+   first sentence or two. The v0.18 vim-delta framing is right for a model
+   that has already committed and says nothing to one that has not. The
+   pitch was never written, only the manual.
+
+A third factor was noted and left alone: `edit`/`print`/`write` collide by
+name with native tools. Renaming was rejected - it would break benchmark
+provenance and the vim-vocabulary principle for a cosmetic gain - but it is
+the remaining lever if v0.19 does not move the needle.
+
+Also confirmed: server `instructions` cannot be assumed delivered. Several
+clients drop the channel, which makes the v0.18 one-fact-one-place rule
+unsafe for anything selection-critical.
+
+## v0.19 (decided and implemented 2026-07-28, same session)
+
+Both halves of dogfood #11, with the user's constraint that the description
+side stay compact and not oversell.
+
+**The optional `path`** on `edit`, `substitute`, `print`, `matches` and
+`write`, defined as exactly `open(path)` first and nothing else - one rule,
+no per-tool drift. It kills the setup call and makes each tool read as
+self-contained in the schema, which is a selection signal in itself. Three
+sub-decisions: the switch is **announced** (`[now on ... — N lines]`) but
+only when the active buffer really changed, so repeated calls stay quiet
+and the no-silent-state rule still holds; an implicit switch **never
+discards unwritten changes**, so a dirty *and* stale buffer gets the
+staleness error where explicit `open` would reload and say so (implicit
+actions must not destroy data; the visible cost is that `print(path=X)` can
+fail where bare `print()` succeeds); and **`motion` is excluded**, being a
+within-file cursor op that `print`/`matches` with a path already cover. CLI
+gets `-f/--file` on the same five verbs, where it matters more still, since
+CLI processes are stateless.
+
+**Selection clauses** leading `edit`, `matches`, `print` and `substitute`,
+written as a rewrite of each flat definition sentence rather than an added
+paragraph - there is no budget to spare. `edit` carries the honest negative
+("not for creating files or rewriting one wholesale"), which is
+load-bearing rather than polite: a tool that says where it loses is
+believed about where it wins, and it is what keeps the change from
+degenerating into "always use djinnvim". Same sentence added to
+`INSTRUCTIONS` and SKILL.md; **selection guidance is now the second
+deliberate duplicate** after the indent rule, for the reason dogfood #11
+confirmed - instructions are a courtesy, descriptions are the only
+guaranteed channel.
+
+Budget: `edit` had to give back ~90 chars and ends at 2033/2048.
+`INSTRUCTIONS` at 2022/2048. The freed chars came from wording, plus one
+example line that duplicated the register paragraph above it verbatim.
+
+Recorded honestly: this is a fix built from a single negative observation,
+and it is only measured on paper. The next foreign-harness session is the
+real test, and if selection still fails, the lever left is naming, not more
+words.
+
+390 tests (8 new: one-call edit through `path`, the note only on an actual
+switch, `path` reaching every op but motion, the no-discard carve-out, the
+no-buffer error advertising `path=`, the CLI `-f` wire shape, motion
+rejecting `-f`, and the descriptions pinning their selection clauses). New
+e2e (`e2e/e2e_path.py`, real MCP stdio): the schema advertises `path`
+optional on five tools and absent on motion, one call edits an unopened
+file, cross-file switches announce themselves, `write(path=)` picks its
+buffer, and the stale-dirty refusal holds. All eleven prior e2es re-run
+green.
+
 ## Appendix: superseded designs
 
 Sketches and plans that were replaced. Kept because the replacement

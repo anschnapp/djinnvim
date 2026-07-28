@@ -367,3 +367,60 @@ def test_instructions_carry_the_cross_cutting_contracts():
     text = server.mcp.instructions
     for contract in ("autoindent", "cc!", "backslash-n", "not the disk"):
         assert contract in text
+
+
+# --- v0.19: the optional `path` (no separate open) and selection guidance ---
+# Dogfood on an external harness (Copilot + Opus 4.8) showed the tools never
+# being chosen: descriptions said HOW, never WHEN, and the three-call floor
+# (open/edit/write) lost to a one-call native edit on ordinary files.
+
+
+def test_path_opens_the_file_and_edits_in_one_call(sample):
+    out = tool(server.edit("at /parse_config/ ciw load_config", path="config.py"))
+    assert "error" not in out
+    assert "load_config" in out
+    assert f"[now on {sample} — 5 lines]" in out  # announced, never silent
+    assert server.session.active is not None
+
+
+def test_path_note_only_on_an_actual_switch(sample):
+    tool(server.open("config.py"))
+    out = tool(server.matches("opts", path="config.py"))
+    assert "now on" not in out  # already active: no state change, no noise
+
+
+def test_path_reaches_every_op_but_motion(sample):
+    assert "5 lines" in tool(server.print_("p", path="config.py"))
+    assert "match" in tool(server.matches("opts", path="config.py"))
+    out = tool(server.substitute(":%s/opts/options/g", path="config.py"))
+    assert "error" not in out and "options" in out
+    assert "wrote" in tool(server.write(path="config.py"))
+    assert "options" in sample.read_text()
+    with pytest.raises(TypeError):
+        server.motion("/def", path="config.py")  # type: ignore[call-arg]
+
+
+def test_implicit_switch_never_discards_unwritten_changes(sample):
+    tool(server.edit("at /parse_config/ ciw load_config", path="config.py"))
+    sample.write_text(SAMPLE.replace("opts = {}", "opts = {'a': 1}"))
+    out = tool(server.edit("at /load_config/ ciw parse_config", path="config.py"))
+    assert "changed on disk" in out          # loud, not a silent reload
+    assert server.session.active is not None
+
+
+def test_no_buffer_error_advertises_path(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "session", Session(roots=[tmp_path]))
+    assert "path=" in tool(server.edit("at /x/ ciw y"))
+
+
+def test_descriptions_say_when_to_reach_for_the_tool():
+    """Selection guidance is a deliberate duplicate of INSTRUCTIONS: many
+    clients drop server instructions, so the reason to pick a tool has to
+    survive in the one channel every client must pass on."""
+    tools = {t.name: t.description or "" for t in asyncio.run(server.mcp.list_tools())}
+    assert "large relative to the change" in tools["edit"]
+    assert "Not for creating files" in tools["edit"]      # the honest negative
+    assert "without loading the file" in tools["matches"]
+    assert "instead of the whole file" in tools["print"]
+    for name in ("edit", "substitute", "print", "matches", "write"):
+        assert "`path`" in tools[name]

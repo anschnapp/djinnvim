@@ -46,20 +46,41 @@ def test_verbs_map_to_ops(calls, capsys):
     assert calls == [
         ("open", {"path": "f.py"}),
         ("motion", {"command": "/def parse"}),
-        ("edit", {"command": "at /old/ ciw new"}),
-        ("substitute", {"command": ":%s/a/b/g"}),
-        ("matches", {"pattern": "parse", "context": 1}),
-        ("write", {"preview": False}),
+        ("edit", {"command": "at /old/ ciw new", "path": None}),
+        ("substitute", {"command": ":%s/a/b/g", "path": None}),
+        ("matches", {"pattern": "parse", "context": 1, "path": None}),
+        ("write", {"preview": False, "path": None}),
     ]
     assert capsys.readouterr().out == "ok-result\n" * 6
+
+
+def test_file_flag_rides_along(calls, capsys):
+    """-f/--file is the CLI's no-separate-open path (v0.19)."""
+    assert cli.main(["edit", "-f", "f.py", "at /old/ ciw new"]) == 0
+    assert cli.main(["matches", "parse", "--file", "f.py"]) == 0
+    assert cli.main(["print", "-f", "f.py", "p above tiny"]) == 0
+    assert cli.main(["write", "-f", "f.py"]) == 0
+    assert calls == [
+        ("edit", {"command": "at /old/ ciw new", "path": "f.py"}),
+        ("matches", {"pattern": "parse", "context": 0, "path": "f.py"}),
+        ("print", {"command": "p above tiny", "path": "f.py"}),
+        ("write", {"preview": False, "path": "f.py"}),
+    ]
+
+
+def test_motion_takes_no_file_flag(calls, capsys):
+    with pytest.raises(SystemExit) as e:
+        cli.main(["motion", "-f", "f.py", "/def parse"])
+    assert e.value.code == 2
+    assert calls == []
 
 
 def test_print_verb(calls, capsys):
     assert cli.main(["print"]) == 0  # bare: defaults to 'p'
     assert cli.main(["print", ":80 p around middle"]) == 0
     assert calls == [
-        ("print", {"command": "p"}),
-        ("print", {"command": ":80 p around middle"}),
+        ("print", {"command": "p", "path": None}),
+        ("print", {"command": ":80 p around middle", "path": None}),
     ]
     assert cli.main(["print", ":80", "p"]) == 2  # one-argument rule
     assert "ONE shell argument" in capsys.readouterr().err
@@ -67,7 +88,7 @@ def test_print_verb(calls, capsys):
 
 def test_write_preview_flag(calls, capsys):
     assert cli.main(["write", "--preview"]) == 0
-    assert calls == [("write", {"preview": True})]
+    assert calls == [("write", {"preview": True, "path": None})]
 
 
 def test_unquoted_command_is_a_loud_error(calls, capsys):

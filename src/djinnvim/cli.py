@@ -60,6 +60,19 @@ def _one_command(op: str, parts: list[str]) -> str | None:
     return None
 
 
+def _add_file_flag(sp: argparse.ArgumentParser) -> None:
+    """-f/--file: work on this file, opening it if needed. Saves the extra
+    `open` call, which matters most here — CLI processes are stateless, so
+    the file has to be named somewhere anyway."""
+    sp.add_argument(
+        "-f",
+        "--file",
+        dest="path",
+        default=None,
+        help="file to work on (opened if needed); default: the active buffer",
+    )
+
+
 def _run_open(args: argparse.Namespace) -> int:
     return _request("open", {"path": args.path})
 
@@ -69,26 +82,32 @@ def _make_verb(op: str):
         command = _one_command(op, args.command)
         if command is None:
             return 2
-        return _request(op, {"command": command})
+        req = {"command": command}
+        if op != "motion":
+            req["path"] = args.path
+        return _request(op, req)
 
     return run
 
 
 def _run_print(args: argparse.Namespace) -> int:
     if not args.command:
-        return _request("print", {"command": "p"})
+        return _request("print", {"command": "p", "path": args.path})
     command = _one_command("print", args.command)
     if command is None:
         return 2
-    return _request("print", {"command": command})
+    return _request("print", {"command": command, "path": args.path})
 
 
 def _run_matches(args: argparse.Namespace) -> int:
-    return _request("matches", {"pattern": args.pattern, "context": args.context})
+    return _request(
+        "matches",
+        {"pattern": args.pattern, "context": args.context, "path": args.path},
+    )
 
 
 def _run_write(args: argparse.Namespace) -> int:
-    return _request("write", {"preview": args.preview})
+    return _request("write", {"preview": args.preview, "path": args.path})
 
 
 def _run_install_skill(args: argparse.Namespace) -> int:
@@ -183,6 +202,8 @@ def build_parser() -> argparse.ArgumentParser:
             nargs="+",
             help="the whole command as ONE quoted argument",
         )
+        if op != "motion":  # motion is a within-file cursor op; see design.md
+            _add_file_flag(sp)
         sp.set_defaults(func=_make_verb(op))
 
     sp = sub.add_parser(
@@ -194,11 +215,13 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="*",
         help="the whole command as ONE quoted argument (default: 'p')",
     )
+    _add_file_flag(sp)
     sp.set_defaults(func=_run_print)
 
     sp = sub.add_parser("matches", help="grep-style listing of all matches")
     sp.add_argument("pattern")
     sp.add_argument("-C", "--context", type=int, choices=(0, 1), default=0)
+    _add_file_flag(sp)
     sp.set_defaults(func=_run_matches)
 
     sp = sub.add_parser("write", help="save the active buffer to disk")
@@ -207,6 +230,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="show the pending buffer-vs-disk diff without writing",
     )
+    _add_file_flag(sp)
     sp.set_defaults(func=_run_write)
 
     sp = sub.add_parser(

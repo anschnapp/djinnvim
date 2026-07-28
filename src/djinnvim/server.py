@@ -25,10 +25,13 @@ from .session import Session
 # Budget rule: keep this under 2000 chars, and check with the drift test.
 INSTRUCTIONS = """\
 djinnvim is keyhole editing: you never read whole files, you hop between
-pattern anchors and small viewports. Open a file, use `matches` to see every
-relevant site, then one `edit` or `substitute` call per change, reading the
-echoed viewport or diff before the next call. `print` when you need a bigger
-look.
+pattern anchors and small viewports. Reach for it when finding or changing
+something would otherwise mean reading a whole file, or when a change repeats
+across many sites; creating or wholesale-rewriting a file is not its job.
+Use `matches` to see every relevant site, then one `edit` or `substitute`
+call per change, reading the echoed viewport or diff before the next call.
+`print` when you need a bigger look. Every tool takes `path`, so no separate
+`open` step is needed.
 
 You already know vim. These are the differences that matter:
 
@@ -49,9 +52,9 @@ You already know vim. These are the differences that matter:
   insert TEXT literally. `substitute` replacements are always literal;
   capture the indent with `^(\\s*)` and `\\1` if you need it there.
 - The buffer is not the disk. Nothing is saved until `write`, so write
-  before running tests or reading the file with any other tool.
-  `write(preview=True)` shows exactly what is pending.
-- Every success echoes a viewport or a diff and every failure is loud and
+  before running tests or reading the file another way.
+  `write(preview=True)` shows what is pending.
+- Every success echoes a viewport or a diff; every failure is loud and
   changes nothing. The echo is your screen: read it before the next call.
 """
 
@@ -111,14 +114,19 @@ async def _ensure_roots(ctx: Context | None) -> str | None:
 
 @mcp.tool(structured_output=False)
 async def open(path: str, ctx: Context | None = None) -> str:
-    """Open a file as the active buffer (or switch to an already-open one).
-    Returns metadata + a small viewport, never the full content. Navigate by
-    pattern with `motion`, not by reading. Then: `matches` to see all sites
-    of a pattern, `edit` for vim normal-mode edits (text objects, whole
+    """Open a file as the active buffer and show its head: metadata + a
+    small viewport, never the full content. Optional — every other tool
+    takes `path` and opens the file itself, so `open` is for when you want
+    the header, or to switch back to an already-open buffer.
+
+    Then: `matches` to see all sites of a pattern, `print` to read a window
+    of lines around a spot, `motion` to move by pattern rather than by
+    reading, `edit` for vim normal-mode edits (text objects, whole
     blocks/paragraphs, registers, undo), `substitute` for ex-style regex
-    line edits, `print` to read a window of lines around a spot (ed/vim
-    `:p` — the reading tool). In every viewport the cursor line's `→ ` prefix is exactly
-    as wide as other lines' two-space prefix — indentation shown is exact."""
+    line edits, `write` to save — nothing reaches disk before that.
+
+    In every viewport the cursor line's `→ ` prefix is exactly as wide as
+    other lines' two-space prefix — indentation shown is exact."""
     err = await _ensure_roots(ctx)
     return err if err else session.open(path)
 
@@ -140,52 +148,57 @@ async def motion(command: str, ctx: Context | None = None) -> str:
 
 
 @mcp.tool(structured_output=False)
-async def edit(command: str, ctx: Context | None = None) -> str:
-    """One vim normal-mode command per call, with TEXT inline (`ciw foo`).
+async def edit(command: str, path: str | None = None, ctx: Context | None = None) -> str:
+    """Change a file in place with one vim normal-mode command, TEXT inline
+    (`ciw foo`). You name the site by pattern instead of quoting the old and
+    new text back: worth it when the file is large relative to the change,
+    or the change repeats across sites. Not for creating files or rewriting
+    one wholesale. `path` opens that file first, so one call can be the
+    whole edit.
 
-    Anchoring replaces moving the cursor first. `at /regex/ <cmd>` edits at
-    the next match; `at "literal text" <cmd>` needs no escaping;
-    `at 2nd /pat/ <cmd>` picks the Nth; `/pat/+N` or `/pat/-N` then shifts N
-    whole lines, which is how you insert above a banner the match sits
-    inside. The anchor lands at the START of the match, so anchor on the
-    exact text you change: `at /15\\)/ ciw 60` changes the 15 in
-    retries(15), while `at /retries=15/ ciw 60` would change retries.
-    <cmd> is an edit command, never a motion.
+    `at /regex/ <cmd>` edits at the next match; `at "literal text" <cmd>`
+    needs no escaping; `at 2nd /pat/ <cmd>` picks the Nth; `/pat/+N` or
+    `/pat/-N` shifts N whole lines, which is how you insert above a banner
+    the match sits inside. The anchor lands at the START of the match, so
+    anchor on the exact text you change: `at /15\\)/ ciw 60` changes the 15
+    in retries(15), `at /retries=15/ ciw 60` the word retries. <cmd> is an
+    edit command, never a motion.
 
     `at each /pat/ <cmd>` edits EVERY match, replacing vim's `:g//normal`.
-    One undo step, all-or-nothing, and it echoes a compact diff instead of a
+    One undo step, all-or-nothing, echoing a compact diff instead of a
     viewport. No registers, no y/p/u. Text objects make it structural:
     `at each /# obsolete/ dap` deletes every marked block whole, blank lines
-    included. To step through matches one at a time instead, reissue
-    `at /pat/ <cmd>`: it takes the next match each call.
+    included. To step through matches instead, reissue `at /pat/ <cmd>`:
+    each call takes the next.
 
     Commands: ciw/caw, ci(/{/[/"/' plus di/da variants, dip/dap, dd, cc, D,
     C, x, r<char>, o/O (below/above, may be multi-line), A/I, i/a,
     cs<old><new>, ds<char>, ysiw<char>, yy and y<i|a><obj>, p/P, u. Changes
     take TEXT, deletes take none. `a` lands after the match's FIRST char, as
     in vim. `o`/`O`/`cc` autoindent from the reference line; `o!`/`O!`/`cc!`
-    insert TEXT literally. `o`/`O` report the blank-line counts around the
-    insertion point, so match spacing conventions from that echo rather than
-    by counting.
+    insert TEXT literally. `o`/`O` echo the blank-line counts around the
+    insertion point, so match spacing from that echo, not by counting.
 
     A `"name` prefix composes with the anchor: `at /def helper/ "fn dap`
     cuts, `"fn p` pastes it back, across files too. Only named deletes write
     a register, `c` never does. `u` undoes one change, no redo.
 
     Examples:
-      edit("at /old_name/ ciw new_name")
+      edit("at /old_name/ ciw new_name", path="src/app/config.py")
       edit("at \\"# merge (skip blocks)\\" O")
       edit("at each /log_debug\\(/ dd")
-      edit("at /def helper/ \\"fn dap")   then   edit("\\"fn p")
     """
     err = await _ensure_roots(ctx)
-    return err if err else session.edit(command)
+    return err if err else session.edit(command, path)
 
 
 @mcp.tool(structured_output=False)
-async def substitute(command: str, ctx: Context | None = None) -> str:
-    """Ex commands for file-wide or ranged changes (call matches first to
-    see all sites). Forms: `:%s/old/new/g` (file), `:s/old/new/` (cursor
+async def substitute(
+    command: str, path: str | None = None, ctx: Context | None = None
+) -> str:
+    """Ex commands for file-wide or ranged changes — one regex pass instead
+    of many hops, without the file in context (call matches first to see all
+    sites). `path` opens that file first. Forms: `:%s/old/new/g` (file), `:s/old/new/` (cursor
     line), `:10,40s/foo/bar/`, `:/start/,/end/s/x/y/g` (pattern range),
     `:g/pat/d` (delete matching lines). Flags: g, i. Regex and replacement
     are Python re syntax (\\1 for groups). The pattern-range end is
@@ -217,14 +230,16 @@ async def substitute(command: str, ctx: Context | None = None) -> str:
       substitute(":/def helper/,/^def /-1d fn")
     """
     err = await _ensure_roots(ctx)
-    return err if err else session.substitute(command)
+    return err if err else session.substitute(command, path)
 
 
 @mcp.tool(name="print", structured_output=False)
-async def print_(command: str = "p", ctx: Context | None = None) -> str:
-    """Read-only print of a window of lines (ed/vim `:p`) — the reading
-    tool for understanding code around a spot; it never modifies anything.
-    Forms: `p` (current line, cursor unchanged), `:80 p` / `:/def load/ p`
+async def print_(
+    command: str = "p", path: str | None = None, ctx: Context | None = None
+) -> str:
+    """Read a window of lines around a spot instead of the whole file
+    (ed/vim `:p`) — read-only, it never modifies anything. `path` opens that
+    file first. Forms: `p` (current line, cursor unchanged), `:80 p` / `:/def load/ p`
     (the cursor MOVES to the addressed line, then prints it), `:10,25 p`
     (explicit range; cursor to its last line). Window words widen the view
     around the cursor line: `p above tiny`, `p below middle`,
@@ -239,34 +254,41 @@ async def print_(command: str = "p", ctx: Context | None = None) -> str:
     Examples:
       print(":/def load_config/ p around middle")
       print("p above tiny")
-      print(":120,140 p")
+      print(":120,140 p", path="src/app/config.py")
     """
     err = await _ensure_roots(ctx)
-    return err if err else session.print(command)
+    return err if err else session.print(command, path)
 
 
 @mcp.tool(structured_output=False)
-async def matches(pattern: str, context: int = 0, ctx: Context | None = None) -> str:
-    """Grep-style listing of all regex matches in the active buffer — one
-    line per matching line, capped at 50. Call before rename-like refactors
-    to see every affected site. `context` (0 or 1) adds surrounding lines.
+async def matches(
+    pattern: str, context: int = 0, path: str | None = None, ctx: Context | None = None
+) -> str:
+    """Find every site of a regex in a file without loading the file into
+    context — one line per matching line, capped at 50. The cheap
+    alternative to reading a file to locate something, and the pre-check
+    before any rename-like refactor. `context` (0 or 1) adds surrounding
+    lines. `path` opens that file first; without it, the active buffer.
 
-    Example: matches("parse_config")
+    Example: matches("parse_config", path="src/app/config.py")
     """
     err = await _ensure_roots(ctx)
-    return err if err else session.matches(pattern, context)
+    return err if err else session.matches(pattern, context, path)
 
 
 @mcp.tool(structured_output=False)
-async def write(preview: bool = False, ctx: Context | None = None) -> str:
+async def write(
+    preview: bool = False, path: str | None = None, ctx: Context | None = None
+) -> str:
     """Save the active buffer to disk. Returns confirmation + how many lines
     changed since the last write. Buffers are in-memory until written —
     nothing else (tests, other tools, file reads) sees buffer changes, so
     write BEFORE running anything against the file. preview=True writes
     NOTHING and returns the pending ±diff (buffer vs disk, disk line
-    numbers) — the final review before committing."""
+    numbers) — the final review before committing. `path` picks the buffer
+    to save, when several files are open."""
     err = await _ensure_roots(ctx)
-    return err if err else session.write(preview)
+    return err if err else session.write(preview, path)
 
 
 def _dedent_descriptions() -> None:

@@ -10,6 +10,11 @@ pattern, look at the echo, edit. Never read a whole file — every command
 returns the few lines around what it did, and that echo IS your
 verification (no re-reads needed).
 
+Reach for it when finding or changing something would otherwise mean
+reading a whole file, when a change repeats across many sites, or when
+file and shell tools are restricted. Creating a file or rewriting one
+wholesale is not its job.
+
 ## Setup — every command, two rules
 
 1. **Pin the sandbox root in the same shell command** (shell env does not
@@ -28,6 +33,12 @@ verification (no re-reads needed).
    djinnvim substitute ":%s/'eu-west'/'us-east'/"
    ```
 
+3. **`-f PATH` names the file to work on**, opening it if needed, so
+   `edit`, `substitute`, `print`, `matches` and `write` need no separate
+   `open` call: `djinnvim edit -f src/app.py 'at /old/ ciw new'`. Without
+   it they use the active buffer. A switch is announced in the echo
+   (`[now on ... ]`).
+
 State (open buffers, cursor, registers, undo) persists across your shell
 calls via an auto-spawned per-session daemon — nothing to start or manage.
 `djinnvim status` shows it, `djinnvim shutdown` stops it (unwritten buffers
@@ -36,8 +47,9 @@ die with it; only `write` touches disk). Exit codes: 1 = the editor said
 
 ## The seven verbs
 
-- `djinnvim open PATH` — open/switch the active buffer. Relative paths
-  resolve against the root, not your cwd.
+- `djinnvim open PATH` — open/switch the active buffer and show its head.
+  Optional, given `-f` above; use it when you want the file's metadata.
+  Relative paths resolve against the root, not your cwd.
 - `djinnvim motion CMD` — move the cursor, one motion per call:
   `/pattern` (regex, forward), `?pattern` (back), `n`/`N` (next/prev —
   n is ALWAYS forward, N ALWAYS backward, unlike vim), `:80` (line),
