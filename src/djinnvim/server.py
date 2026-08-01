@@ -13,6 +13,7 @@ from urllib.parse import unquote, urlparse
 from mcp import types
 from mcp.server.fastmcp import Context, FastMCP
 
+from . import guard
 from . import roots as roots_mod
 from .session import Session
 
@@ -112,6 +113,16 @@ async def _ensure_roots(ctx: Context | None) -> str | None:
     return None
 
 
+def _guarded(op: str, fn, *args) -> str:
+    """Run one session op under the time budget (see guard.py). Every tool
+    here is `async def`, so a runaway pattern would otherwise block the
+    event loop and wedge the whole server, not just its own call."""
+    try:
+        return guard.run_guarded(op, fn, *args)
+    except guard.OpTimeout as e:
+        return f"error: {e}"
+
+
 @mcp.tool(structured_output=False)
 async def open(path: str, ctx: Context | None = None) -> str:
     """Open a file as the active buffer and show its head: metadata + a
@@ -128,7 +139,7 @@ async def open(path: str, ctx: Context | None = None) -> str:
     In every viewport the cursor line's `→ ` prefix is exactly as wide as
     other lines' two-space prefix — indentation shown is exact."""
     err = await _ensure_roots(ctx)
-    return err if err else session.open(path)
+    return err if err else _guarded("open", session.open, path)
 
 
 @mcp.tool(structured_output=False)
@@ -144,7 +155,7 @@ async def motion(command: str, ctx: Context | None = None) -> str:
     Examples: motion("/def parse")   motion(":80")   motion("n")
     """
     err = await _ensure_roots(ctx)
-    return err if err else session.motion(command)
+    return err if err else _guarded("motion", session.motion, command)
 
 
 @mcp.tool(structured_output=False)
@@ -189,7 +200,7 @@ async def edit(command: str, path: str | None = None, ctx: Context | None = None
       edit("at each /log_debug\\(/ dd")
     """
     err = await _ensure_roots(ctx)
-    return err if err else session.edit(command, path)
+    return err if err else _guarded("edit", session.edit, command, path)
 
 
 @mcp.tool(structured_output=False)
@@ -230,7 +241,7 @@ async def substitute(
       substitute(":/def helper/,/^def /-1d fn")
     """
     err = await _ensure_roots(ctx)
-    return err if err else session.substitute(command, path)
+    return err if err else _guarded("substitute", session.substitute, command, path)
 
 
 @mcp.tool(name="print", structured_output=False)
@@ -257,7 +268,7 @@ async def print_(
       print(":120,140 p", path="src/app/config.py")
     """
     err = await _ensure_roots(ctx)
-    return err if err else session.print(command, path)
+    return err if err else _guarded("print", session.print, command, path)
 
 
 @mcp.tool(structured_output=False)
@@ -273,7 +284,7 @@ async def matches(
     Example: matches("parse_config", path="src/app/config.py")
     """
     err = await _ensure_roots(ctx)
-    return err if err else session.matches(pattern, context, path)
+    return err if err else _guarded("matches", session.matches, pattern, context, path)
 
 
 @mcp.tool(structured_output=False)
@@ -288,7 +299,7 @@ async def write(
     numbers) — the final review before committing. `path` picks the buffer
     to save, when several files are open."""
     err = await _ensure_roots(ctx)
-    return err if err else session.write(preview, path)
+    return err if err else _guarded("write", session.write, preview, path)
 
 
 def _dedent_descriptions() -> None:

@@ -661,9 +661,14 @@ Register rules (the "visible state" the Non-Goals amendment allows):
 - `substitute` diffs capped at ~60 changed lines in output; beyond that, report count + first/last changed regions and suggest `matches` to inspect.
 - `matches` capped at 50 hits; `print` spans capped at 101 lines.
 - All paths validated against the sandbox roots (see Sandboxing below).
-- Not implemented, still on the list: a linear-time regex engine (RE2-style)
-  or timeout against catastrophic backtracking — the dialect is bare Python
-  `re` today — and a read-only mode flag for exploration sessions.
+- Catastrophic backtracking is bounded: every pattern-taking op runs under a
+  time budget (10 s default, `DJINNVIM_OP_BUDGET_SECONDS`), enforced by a
+  forked oracle child, because `re` releases neither signals nor the GIL and
+  so no in-process timeout can interrupt it. Overrun is a loud `error:` that
+  changes nothing, and buffers survive it. See `guard.py`.
+- Not implemented, still on the list: a linear-time regex engine (RE2-style),
+  the dialect is bare Python `re` today, and a read-only mode flag for
+  exploration sessions.
 
 ## Example Session
 
@@ -875,9 +880,18 @@ Parked with a stated gate:
 - **A short command sequence inside `at each` only** - the surgical
   concession if pass-2 re-anchoring on post-pass-1 text proves awkward.
   Still transactional, still no general sequences.
-- **Read-only mode flag**, and a linear-time (RE2-style) regex engine or
-  timeout instead of bare Python `re`. Both in the original safeguards
-  list, neither implemented.
+- **Read-only mode flag**, and a linear-time (RE2-style) regex engine
+  instead of bare Python `re`. Both come from the original safeguards list;
+  the timeout half of that entry shipped as v0.20's op budget, these two
+  did not.
+- **Refusing an ambiguous anchor on destructive commands.** `at /pat/ dd`
+  with a pattern matching several sites edits the first and says `match 1
+  of N`; it does not refuse. Reviewed 2026-08-01 and deliberately kept:
+  during that session the behavior misfired twice on me, and both times
+  the count plus the echoed viewport caught it within one call and `u`
+  restored it, which is the echo discipline doing exactly its job. Gate:
+  if a real session ever lands a wrong-site destructive edit that the echo
+  does *not* catch, make `dd`/`cc` demand an unambiguous anchor.
 
 Deliberately not built (distinct from parked - these are decisions, not
 queues):

@@ -1980,6 +1980,58 @@ file, cross-file switches announce themselves, `write(path=)` picks its
 buffer, and the stale-dirty refusal holds. All eleven prior e2es re-run
 green.
 
+## v0.20: the op time budget (decided and implemented 2026-08-01)
+
+Found in a pre-launch security review, not in a dogfood session: `matches`
+with a catastrophic pattern (`(a+)+$b` over a 60-char line) pinned the
+daemon at 100% CPU forever. The damage was not the hang itself but that it
+was **unrecoverable**: `djinnvim shutdown`, the documented escape, also
+timed out, because the wedged daemon never returns to `accept()`. SIGTERM
+did not land either. It took `kill -9`. Same defect on the MCP side, where
+every tool is `async def`, so one bad pattern blocks the event loop and the
+whole server stops answering.
+
+**The first fix was wrong, and measuring it is what saved us.** The obvious
+answer is a watchdog thread that times the op out. It cannot work: CPython's
+`re` neither checks for signals nor releases the GIL while backtracking, so
+no other Python thread is ever scheduled. Measured, not reasoned about:
+`Thread.join(2.0)` against such a pattern does not return in 2 s, it does
+not return at all. That kills every in-process timeout, the watchdog thread
+included, and it is pinned now as `test_regex_never_releases_the_gil` so a
+future CPython change surfaces here instead of in an argument.
+
+**What shipped is a fork oracle.** The op runs twice: first in a forked
+child used purely as a *termination oracle* (its result is discarded, we
+only ask whether it finished inside the budget, and it is SIGKILLed if it
+did not), then for real in the parent, now knowing this pattern terminates
+on this content. `fork` hands the child a copy-on-write snapshot of the
+live Session for free, so there is nothing to serialize and no state to
+merge back, which is what keeps this out of the session internals entirely.
+
+The alternative was killing the process on overrun and letting the next
+command respawn. Rejected: it takes every unwritten buffer with it because
+one pattern was bad. The oracle keeps the contract every other djinnvim
+failure keeps, a loud `error:` that changes nothing, and the e2e asserts
+exactly that (an unwritten change made before the runaway pattern is still
+pending after it, and still writes correctly).
+
+Three honest costs. Every guarded op runs **twice**: measured at 3.2 ms →
+13.5 ms per `matches` on a 10 000-line file, which is noise against a model
+round trip, but it is real and it is not free. Only pure in-memory,
+pattern-taking ops are guarded (`PATTERN_OPS`); `write` touches disk and
+`open` takes no user regex, so a throwaway child must never repeat them.
+And `fork` is POSIX, so the guard degrades to running inline where it is
+missing rather than pretending to protect.
+
+Budget is 10 s, `DJINNVIM_OP_BUDGET_SECONDS` overrides, `<= 0` disables it.
+
+399 tests (9 new, including the GIL measurement, side-effect-runs-once, and
+a check that the oracle child is actually reaped rather than the wedge just
+moving into an orphan). New `e2e/e2e_guard.py` over real MCP stdio, which
+is where this had to be proven: a unit test cannot see that the *server*
+kept answering after the runaway pattern. All twelve prior e2es re-run
+green.
+
 ## Appendix: superseded designs
 
 Sketches and plans that were replaced. Kept because the replacement

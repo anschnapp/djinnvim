@@ -38,6 +38,7 @@ import time
 from pathlib import Path
 
 from . import __version__
+from . import guard
 from . import roots as roots_mod
 from .session import Session
 
@@ -217,7 +218,11 @@ def _handle(conn: socket.socket, session: Session, disc: str) -> bool:
         if op not in SESSION_OPS:
             reply({"ok": False, "error": f"unknown op: {op!r}"})
             return False
-        reply({"ok": True, "result": getattr(session, op)(**args)})
+        try:
+            result = guard.run_guarded(op, getattr(session, op), **args)
+        except guard.OpTimeout as e:
+            result = f"error: {e}"
+        reply({"ok": True, "result": result})
     except Exception as e:  # a Session bug must not take the daemon down
         reply({"ok": False, "error": f"{type(e).__name__}: {e}"})
     return False
