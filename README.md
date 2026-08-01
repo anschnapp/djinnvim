@@ -379,6 +379,16 @@ Every path is validated against a set of sandbox roots - resolved (symlinks foll
 
 Two honest caveats. The sandbox confines the *agent* (model-generated paths, prompt injection), not a hostile local user - TOCTOU races are out of scope, matching the exposure of native editing tools. And permission granularity differs from native editors that can re-prompt per edit: djinnvim's `write`, once allowed as a tool, is allowed across the whole sandbox - the same posture as an editor in accept-edits mode, not a regression, but worth knowing.
 
+**Writes are atomic.** `write` fills a hidden temp file beside the target
+(`.<file>.<random>.djinnvim-tmp`) and swaps it in with a single rename, so an
+interrupted write can never leave you with a half-written source file. One
+consequence worth knowing: a hard crash (SIGKILL, power loss) runs no cleanup
+code, so that temp file can be left behind. Your file is intact either way, and
+djinnvim removes the leftover the next time it opens or writes that file. Three
+cases deliberately keep the older in-place write, because a rename swaps the
+inode and that is visible to others: hard-linked files, files you don't own,
+and a read-only directory holding a writable file.
+
 ## Roadmap
 
 - **Wider client testing** - Claude Code is the only MCP client exercised so far; `roots/list` handling and tool-description ergonomics need eyes from other clients

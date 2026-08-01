@@ -2032,6 +2032,112 @@ is where this had to be proven: a unit test cannot see that the *server*
 kept answering after the runaway pattern. All twelve prior e2es re-run
 green.
 
+## v0.21: atomic writes (decided and implemented 2026-08-01)
+
+Second item from the same pre-launch review. `Buffer.write` was
+`path.write_text(...)`, which truncates in place: a process dying mid-write
+leaves the user's source file cut in half. Lower severity than the wedge
+(no security consequence, and v0.20 removed the `kill -9` that made a
+mid-write death plausible), but the failure is silent and lands on the one
+thing the user cares most about.
+
+Standard fix, same-directory temp plus one `os.replace`. The interesting
+constraint was the user's: the temp must not be invasive. `os.replace` is
+only atomic within a filesystem, so /tmp is not available and the temp
+necessarily appears in the user's source tree. That made invasiveness a
+design requirement rather than an afterthought:
+
+- Hidden, unique, self-identifying: `.<name>.<rand>.djinnvim-tmp`. Dotfile
+  so watchers and `ls` skip it, random so concurrent writers cannot
+  collide, named so anyone who does see it knows whose it is.
+- Removed on every failure path this process can still run code on.
+  Verified in a real git repo: five
+  write cycles leave `git status` showing only the actual edit, and
+  `--ignored` finds nothing.
+- File mode copied from the original, since `mkstemp` creates 0600 and
+  silently tightening a 0644 source file is its own kind of damage.
+
+**Three cases deliberately keep the old in-place write**, because a rename
+swaps the inode and that is visible to someone else: **hard-linked files**
+(every other link would detach), **files we do not own** (the replacement
+would be ours, so a shared file changes hands), and a **read-only directory
+holding a writable file** (the temp cannot be created, and atomicity is not
+worth failing a write the old path would have completed).
+
+A failure *after* the temp exists never falls back. If filling it failed,
+a full disk being the likely cause, then writing in place would fail the
+same way but destructively, which is the entire thing being prevented.
+
+**The truncation test was asleep when first written** and is worth
+recording as a method note. It sampled the file 400 times while a child
+rewrote it, and passed. It also passed against the *old* implementation,
+which is the only reason we found out: 0/400 partial reads, because the
+parent finished sampling before the child had started. Recalibrated to
+sample for 1.5 s after a 0.4 s warmup, the same loop scores 149944/150057
+partial against `write_text` and 0 against the new code. It now also
+asserts it saw both file versions, so a future timing shift makes it fail
+loudly rather than silently prove nothing again.
+
+**A follow-up question caught an overclaim.** Asked whether the test should
+also confirm the file ends up *complete*, not merely never-partial, the
+answer was yes, and building it surfaced that "removed on every failure
+path" was false for the case that motivated the whole change. SIGKILL runs
+no cleanup: measured over 25 hard kills mid-write, the target survived
+intact 25 times (the property we bought) and a temp was stranded 25 times
+(litter we had claimed did not happen). Both docs said otherwise and were
+corrected.
+
+The fix is a sweep at the start of each write, removing temps that carry
+*this same target's* prefix and have been untouched for a minute. Both
+narrowings matter: a different file's temp is never ours to delete, and an
+in-flight write is milliseconds old, so a concurrent writer is never eaten.
+No background sweeper, no state, litter cleared the next time that file is
+written.
+
+The headline test is now the shape the question implied: one big 200 000
+line change, a reader sampling throughout, asserting every sample is a
+*complete* version, that the change actually landed, and that the sampler
+witnessed the transition rather than arriving late. Recalibration check
+repeated against the old implementation: 233 partial samples of 37 419, so
+it still detects the bug it was written for. Two more tests cover the real
+crash directly (hard kill mid-write leaves the target complete) and the
+sweep's two narrowings.
+
+**Follow-up questions closed two more gaps.** Asked what stops a temp name
+colliding with a real file, the answer turned out to have two independent
+halves worth stating: creation cannot clobber anything because `mkstemp`
+opens with `O_EXCL` (verified against the raw syscall on an existing file,
+which refuses with EEXIST), and deletion is narrowed by prefix, suffix and
+a 60 s age. Only the second is ours to get right; the first is the kernel's.
+
+Asked whether a restart clears leftovers, it did not: the sweep ran on
+write alone, so a crash on a file never written again stranded its temp
+forever. `open` now sweeps as well, which is the cheap version of "on
+restart" - the recovery path a user actually takes is reopening the file.
+Sweeping the whole sandbox root at startup was rejected: a recursive walk
+of the user's repo on every server start, deleting by pattern across a tree
+nobody asked us to traverse.
+
+Asked whether the leftover was documented, it was in `buffer.py`,
+`design.md` and here, and *not* in the README, which is the only one a
+stranger reads. Now a short "Writes are atomic" note there covers the temp
+name, the crash leftover, that the file itself is never damaged, and the
+three in-place fallbacks. Not added to SKILL.md: it is not actionable for
+the agent and that budget is contested.
+
+One test was flaky and is worth the note. The sweep tests raced a spawned
+writer for a stranded temp with a fixed 0.6 s sleep, which held alone and
+failed in the full suite on a loaded box. Two fixes: the sweep tests now
+build the stranded temp directly, since what they test is the sweep and not
+the stranding, and the one test that does measure a real SIGKILL polls
+until the writer is demonstrably mid-loop before killing, so it can neither
+pass vacuously nor fail because the machine was busy. Same lesson as the
+asleep test, one layer down: a fixed sleep is an assumption about a machine
+you do not control.
+
+415 tests (16 new). All thirteen e2es green, and the suite runs clean three
+times over plus once under deliberate CPU contention.
+
 ## Appendix: superseded designs
 
 Sketches and plans that were replaced. Kept because the replacement

@@ -514,6 +514,22 @@ Save the active buffer to disk.
 - Nothing reaches disk until `write`. That boundary is load-bearing for the
   permission-management argument (allow `edit`, gate `write`) and is why
   auto-save is a Non-Goal.
+- The write itself is atomic: content goes to a hidden same-directory temp
+  file (`.<name>.<rand>.djinnvim-tmp`) which then replaces the target in one
+  rename, so a process that dies mid-write can never leave a truncated
+  source file. The temp is removed on every failure path this process can
+  still run code on; a SIGKILL or power cut cannot, and does strand one next
+  to the target (measured: 25 of 25 hard kills), so each write first sweeps
+  stranded temps carrying that same target's prefix and older than a minute,
+  and `open` sweeps too, so a crash on a file never written again is still
+  cleared by reopening it. Creation itself cannot collide: `mkstemp` opens
+  with `O_EXCL`, so it can never overwrite an existing file, real or ours.
+  Two cases keep
+  the old in-place write deliberately, because a rename swaps the inode and
+  that is visible to others: hard-linked files (the other links would
+  detach) and files we do not own (they would change hands). A read-only
+  directory holding a writable file falls back too, rather than failing a
+  write the old path would have completed.
 
 ## Conventions
 

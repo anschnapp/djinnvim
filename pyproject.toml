@@ -5,7 +5,12 @@ description = "Vim-inspired, pattern-anchored keyhole editing for AI agents (MCP
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "mcp>=1.0",
+    # <2: mcp 2.0.0 restructured the server package and dropped
+    # mcp.server.fastmcp, which server.py is built on. An unpinned install
+    # resolves to 2.x and the MCP server dies on import. Porting to the 2.x
+    # API is real work; until then this pin is what keeps a fresh install
+    # working.
+    "mcp>=1.0,<2",
 ]
 
 [project.scripts]
